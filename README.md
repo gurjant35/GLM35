@@ -5,15 +5,18 @@ and open it.
 
 ## Safe Inside
 
-A playable prototype of the survival game described in `GAME_DESIGN.md`: a
-top-down open world where your van is the only safe place. Drive, park, step
-out to scavenge crates, and get back behind the doors before the night — or
-whatever heard you — arrives.
+A playable 3D prototype of the survival game described in `GAME_DESIGN.md`:
+an open world where your van is the only safe place. Drive, park, step out to
+scavenge, and get back behind the doors before the night — or whatever heard
+you — arrives. Inspired by Last Day on Earth's scavenge-and-stash loop.
 
-**Play it:** open `safe-inside.html` in a browser (keyboard + mouse).
-Day/night cycle, dynamic weather, hunger/thirst/fuel/chassis management,
-zombies and wolves, a procedurally generated road network, camp menu
-(sleep · repair · refuel), and autosave to local storage.
+**Play it:** open `safe-inside.html` in a browser. Works on phones (touch
+joystick + buttons, landscape is best) and desktop (WASD + mouse).
+Three.js-rendered world (engine inlined, fully offline) with real-time
+shadows, horror nights with glowing-eyed dead, dynamic weather with
+lightning, a backpack slot-grid with crafting, pistol + bat combat with
+auto-aim, chests/wrecks/tree-chopping, camp menu (sleep · repair · refuel),
+and autosave to local storage.
 
 ## Momentum
 
