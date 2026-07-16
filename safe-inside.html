@@ -1,0 +1,847 @@
+<title>Safe Inside — Vehicle Survival Prototype</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root{
+    --night:#0b0f0c; --panel:rgba(16,22,17,.92); --edge:#2a352c;
+    --ink:#e7e2d2; --dim:#8b957f; --faint:#5c6656;
+    --amber:#f0a940; --amber-deep:#b97a1c; --moss:#7ea379; --rust:#c8513a;
+    --mono:ui-monospace,'Cascadia Mono','SF Mono',Menlo,Consolas,monospace;
+    --disp:'Arial Narrow','Helvetica Neue',system-ui,sans-serif;
+  }
+  html,body{height:100%;}
+  body{margin:0;background:var(--night);color:var(--ink);font-family:var(--mono);overflow:hidden;
+       -webkit-user-select:none;user-select:none;}
+  #game{position:fixed;inset:0;display:block;background:var(--night);}
+  #minimap{position:fixed;top:14px;right:14px;width:150px;height:150px;border:1px solid var(--edge);
+           background:rgba(8,12,9,.85);image-rendering:pixelated;border-radius:3px;}
+
+  /* ---------- HUD ---------- */
+  .hud{position:fixed;z-index:5;pointer-events:none;font-size:12px;line-height:1.4;}
+  #clock{top:14px;left:14px;background:var(--panel);border:1px solid var(--edge);border-radius:3px;
+         padding:8px 12px;display:flex;gap:14px;align-items:baseline;}
+  #clock b{font-family:var(--disp);font-weight:700;letter-spacing:.14em;font-size:13px;color:var(--ink);}
+  #clock span{color:var(--dim);}
+  #vitals{left:14px;bottom:14px;display:flex;flex-direction:column;gap:5px;width:210px;}
+  #supplies{right:14px;bottom:14px;background:var(--panel);border:1px solid var(--edge);border-radius:3px;
+            padding:9px 12px;display:grid;grid-template-columns:auto auto;gap:3px 16px;font-variant-numeric:tabular-nums;}
+  #supplies .k{color:var(--dim);} #supplies .v{text-align:right;color:var(--ink);}
+  .bar{background:var(--panel);border:1px solid var(--edge);border-radius:3px;padding:5px 8px 6px;}
+  .bar .lbl{display:flex;justify-content:space-between;color:var(--dim);letter-spacing:.08em;font-size:10px;margin-bottom:3px;}
+  .bar .tr{height:5px;background:#1a221b;border-radius:2px;overflow:hidden;}
+  .bar .fi{height:100%;width:100%;background:var(--moss);transition:width .25s;}
+  .bar.hp .fi{background:var(--rust);} .bar.van .fi{background:var(--amber);}
+  #prompt{left:50%;bottom:90px;transform:translateX(-50%);background:var(--panel);border:1px solid var(--amber-deep);
+          border-radius:3px;padding:7px 16px;color:var(--amber);letter-spacing:.06em;font-size:13px;display:none;}
+  #prompt.on{display:block;}
+  #log{left:50%;top:16px;transform:translateX(-50%);text-align:center;display:flex;flex-direction:column;gap:3px;}
+  #log div{color:var(--dim);font-size:12px;text-shadow:0 1px 3px #000;transition:opacity 1s;letter-spacing:.03em;}
+  #log div.warn{color:var(--rust);} #log div.good{color:var(--amber);}
+  #searchbar{left:50%;bottom:130px;transform:translateX(-50%);width:180px;display:none;}
+  #searchbar.on{display:block;}
+  #searchbar .tr{height:4px;background:#1a221b;border:1px solid var(--edge);border-radius:2px;}
+  #searchbar .fi{height:100%;width:0;background:var(--amber);}
+
+  /* ---------- overlays ---------- */
+  .veil{position:fixed;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;
+        background:radial-gradient(ellipse 90% 70% at 50% 42%,rgba(20,28,21,.86),rgba(5,8,6,.96));}
+  .veil.off{display:none;}
+  .card{max-width:620px;width:min(92vw,620px);background:var(--panel);border:1px solid var(--edge);
+        border-radius:4px;padding:34px 38px 30px;box-shadow:0 30px 80px rgba(0,0,0,.6);}
+  .kicker{color:var(--amber);letter-spacing:.34em;font-size:11px;margin:0 0 10px;}
+  h1{font-family:var(--disp);font-weight:700;font-size:clamp(40px,8vw,62px);letter-spacing:.06em;
+     margin:0 0 6px;line-height:.95;text-transform:uppercase;text-wrap:balance;}
+  h1 em{font-style:normal;color:var(--amber);}
+  .sub{color:var(--dim);margin:0 0 22px;max-width:46ch;}
+  .ctl{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:12px;margin:0 0 24px;
+       border-top:1px solid var(--edge);border-bottom:1px solid var(--edge);padding:14px 2px;}
+  .ctl b{color:var(--amber);font-weight:400;white-space:nowrap;} .ctl span{color:var(--dim);}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+  button{font-family:var(--mono);font-size:13px;letter-spacing:.1em;cursor:pointer;border-radius:3px;
+         padding:11px 22px;border:1px solid var(--amber-deep);background:var(--amber);color:#171207;font-weight:700;}
+  button.ghost{background:transparent;color:var(--dim);border-color:var(--edge);font-weight:400;}
+  button:hover{filter:brightness(1.1);} button.ghost:hover{color:var(--ink);}
+  button:focus-visible{outline:2px solid var(--amber);outline-offset:2px;}
+  button:disabled{opacity:.35;cursor:default;filter:none;}
+  .fine{color:var(--faint);font-size:11px;margin-top:16px;}
+  #campCard .stat{display:grid;grid-template-columns:1fr auto;gap:3px 20px;margin:0 0 18px;font-size:12px;
+                  border-bottom:1px solid var(--edge);padding-bottom:14px;font-variant-numeric:tabular-nums;}
+  #campCard .stat .k{color:var(--dim);} #campCard button{width:100%;text-align:left;margin-bottom:8px;}
+  #deathCard .stat{display:grid;grid-template-columns:1fr auto;gap:4px 20px;margin:0 0 22px;
+                   font-variant-numeric:tabular-nums;font-size:13px;}
+  #deathCard .stat .k{color:var(--dim);}
+  @media (prefers-reduced-motion:reduce){ .bar .fi{transition:none;} }
+</style>
+
+<canvas id="game"></canvas>
+<canvas id="minimap" width="160" height="160"></canvas>
+
+<div class="hud" id="clock"><b id="dayLbl">DAY 1</b><span id="timeLbl">06:00</span><span id="wxLbl">CLEAR</span></div>
+<div class="hud" id="log"></div>
+<div class="hud" id="vitals">
+  <div class="bar hp"><div class="lbl"><span>CONDITION</span><span id="hpN">100</span></div><div class="tr"><div class="fi" id="hpB"></div></div></div>
+  <div class="bar"><div class="lbl"><span>FOOD</span><span id="huN">100</span></div><div class="tr"><div class="fi" id="huB"></div></div></div>
+  <div class="bar"><div class="lbl"><span>WATER</span><span id="thN">100</span></div><div class="tr"><div class="fi" id="thB"></div></div></div>
+  <div class="bar van"><div class="lbl"><span>VAN · FUEL</span><span id="fuN">100</span></div><div class="tr"><div class="fi" id="fuB"></div></div></div>
+  <div class="bar van"><div class="lbl"><span>VAN · CHASSIS</span><span id="vhN">100</span></div><div class="tr"><div class="fi" id="vhB"></div></div></div>
+</div>
+<div class="hud" id="supplies">
+  <span class="k">rations</span><span class="v" id="iFood">0</span>
+  <span class="k">water</span><span class="v" id="iWater">0</span>
+  <span class="k">fuel cans</span><span class="v" id="iFuel">0</span>
+  <span class="k">scrap</span><span class="v" id="iScrap">0</span>
+  <span class="k">medkits</span><span class="v" id="iMed">0</span>
+  <span class="k">rounds</span><span class="v" id="iAmmo">0</span>
+</div>
+<div class="hud" id="prompt"></div>
+<div class="hud" id="searchbar"><div class="tr"><div class="fi" id="searchFi"></div></div></div>
+
+<div class="veil" id="titleVeil">
+  <div class="card">
+    <p class="kicker">A VEHICLE SURVIVAL PROTOTYPE</p>
+    <h1>Safe <em>Inside</em></h1>
+    <p class="sub">The van is home — kitchen, bed, workshop, four walls that hold. Everything you need to stay alive is somewhere out there in the dark. Go get it, and get back.</p>
+    <div class="ctl">
+      <b>W A S D</b><span>move · drive (Shift to run)</span>
+      <b>MOUSE</b><span>aim · CLICK shoot · SPACE swing pipe</span>
+      <b>E</b><span>enter / leave the van</span>
+      <b>F (hold)</b><span>search crates — searching makes noise</span>
+      <b>R</b><span>camp menu in the van: sleep, repair, refuel</span>
+      <b>1 / 2 / 3</b><span>eat · drink · medkit</span>
+      <b>M · N · P</b><span>map · sound · pause</span>
+    </div>
+    <div class="row">
+      <button id="btnNew">SET OUT</button>
+      <button id="btnContinue" class="ghost">CONTINUE — DAY <span id="contDay">1</span></button>
+    </div>
+    <p class="fine">Autosaves at dawn and when you sleep. Days are safer. Nights are not. Keyboard + mouse required.</p>
+  </div>
+</div>
+
+<div class="veil off" id="campVeil">
+  <div class="card" id="campCard">
+    <p class="kicker">ENGINE OFF · DOORS LOCKED</p>
+    <h1 style="font-size:34px;">Camp</h1>
+    <div class="stat">
+      <span class="k">van chassis</span><span id="cVh">—</span>
+      <span class="k">fuel</span><span id="cFu">—</span>
+      <span class="k">scrap / fuel cans</span><span id="cInv">—</span>
+    </div>
+    <button id="btnSleep">SLEEP UNTIL DAWN <span style="float:right;color:#5c4a17">−1 ration −1 water</span></button>
+    <button id="btnRepair">PATCH THE CHASSIS +25 <span style="float:right;color:#5c4a17">−1 scrap</span></button>
+    <button id="btnRefuel">POUR A FUEL CAN +40 <span style="float:right;color:#5c4a17">−1 can</span></button>
+    <button id="btnCampClose" class="ghost">BACK TO THE WHEEL — R</button>
+  </div>
+</div>
+
+<div class="veil off" id="pauseVeil">
+  <div class="card">
+    <p class="kicker">PAUSED</p>
+    <h1 style="font-size:34px;">Holding still</h1>
+    <div class="row">
+      <button id="btnResume">RESUME — P</button>
+      <button id="btnMute" class="ghost">SOUND: ON</button>
+      <button id="btnAbandon" class="ghost">ABANDON RUN</button>
+    </div>
+  </div>
+</div>
+
+<div class="veil off" id="deathVeil">
+  <div class="card" id="deathCard">
+    <p class="kicker" style="color:var(--rust)">YOU NEVER MADE IT BACK TO THE VAN</p>
+    <h1 style="font-size:40px;">It ends <em>outside</em></h1>
+    <div class="stat">
+      <span class="k">days survived</span><span id="dDays">0</span>
+      <span class="k">crates searched</span><span id="dCrates">0</span>
+      <span class="k">things put down</span><span id="dKills">0</span>
+      <span class="k">distance driven</span><span id="dDist">0 km</span>
+    </div>
+    <div class="row"><button id="btnAgain">SET OUT AGAIN</button></div>
+  </div>
+</div>
+
+<script>
+'use strict';
+/* ================= utils ================= */
+const TAU=Math.PI*2, clamp=(v,a,b)=>v<a?a:v>b?b:v, lerp=(a,b,t)=>a+(b-a)*t;
+const dist2=(ax,ay,bx,by)=>{const dx=ax-bx,dy=ay-by;return dx*dx+dy*dy;};
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+function hash2(x,y){let h=(x*374761393+y*668265263)|0;h=(h^(h>>>13))|0;h=Math.imul(h,1274126177);return((h^(h>>>16))>>>0)/4294967296;}
+const angDiff=(a,b)=>{let d=(b-a)%TAU;if(d>Math.PI)d-=TAU;if(d<-Math.PI)d+=TAU;return d;};
+
+/* ================= constants ================= */
+const TW=32, MW=170, MH=170, SOLID=t=>t===2||t===4;
+const DAY_LEN=330, NIGHT_START=.62, DAWN=.04;      // fraction of day
+const SAVE_KEY='safe-inside-v1';
+const reduceMotion=matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* ================= canvas ================= */
+const cv=document.getElementById('game'), cx=cv.getContext('2d');
+const dark=document.createElement('canvas'), dx=dark.getContext('2d');
+function resize(){cv.width=dark.width=innerWidth;cv.height=dark.height=innerHeight;}
+addEventListener('resize',resize);resize();
+
+/* ================= input ================= */
+const keys={}, mouse={x:0,y:0,down:false};
+addEventListener('keydown',e=>{
+  if(['Space','ArrowUp','ArrowDown'].includes(e.code))e.preventDefault();
+  keys[e.code]=true; onKey(e.code);
+});
+addEventListener('keyup',e=>keys[e.code]=false);
+addEventListener('mousemove',e=>{mouse.x=e.clientX;mouse.y=e.clientY;});
+addEventListener('mousedown',e=>{if(e.button===0){mouse.down=true;Snd.unlock();}});
+addEventListener('mouseup',e=>{if(e.button===0)mouse.down=false;});
+addEventListener('contextmenu',e=>e.preventDefault());
+addEventListener('blur',()=>{for(const k in keys)keys[k]=false;mouse.down=false;});
+
+/* ================= audio ================= */
+const Snd={
+  ctx:null,master:null,filter:null,engine:null,engineGain:null,rain:null,rainGain:null,muted:false,
+  unlock(){ if(this.ctx||this.muted===null)return; try{
+    const C=new (window.AudioContext||window.webkitAudioContext)();
+    this.ctx=C; this.master=C.createGain(); this.master.gain.value=.5;
+    this.filter=C.createBiquadFilter(); this.filter.type='lowpass'; this.filter.frequency.value=18000;
+    this.master.connect(this.filter).connect(C.destination);
+    // engine
+    const o=C.createOscillator();o.type='sawtooth';o.frequency.value=42;
+    const g=C.createGain();g.gain.value=0;
+    const lp=C.createBiquadFilter();lp.type='lowpass';lp.frequency.value=240;
+    o.connect(lp).connect(g).connect(this.master);o.start();
+    this.engine=o;this.engineGain=g;
+    // rain (looped noise)
+    const len=C.sampleRate*2, buf=C.createBuffer(1,len,C.sampleRate), d=buf.getChannelData(0);
+    for(let i=0;i<len;i++)d[i]=Math.random()*2-1;
+    const src=C.createBufferSource();src.buffer=buf;src.loop=true;
+    const rf=C.createBiquadFilter();rf.type='lowpass';rf.frequency.value=900;
+    const rg=C.createGain();rg.gain.value=0;
+    src.connect(rf).connect(rg).connect(this.master);src.start();
+    this.rain=src;this.rainGain=rg;
+  }catch(e){} },
+  setInside(inside){ if(!this.ctx)return;
+    this.filter.frequency.setTargetAtTime(inside?750:18000,this.ctx.currentTime,.15);
+    this.master.gain.setTargetAtTime(this.muted?0:(inside?.34:.5),this.ctx.currentTime,.15); },
+  setEngine(sp){ if(!this.ctx)return;
+    this.engineGain.gain.setTargetAtTime(sp>0?.05+sp*.09:0,this.ctx.currentTime,.08);
+    this.engine.frequency.setTargetAtTime(40+sp*70,this.ctx.currentTime,.08); },
+  setRain(a){ if(this.ctx)this.rainGain.gain.setTargetAtTime(a*.16,this.ctx.currentTime,.5); },
+  blip(f0,f1,dur,type='square',vol=.2){ if(!this.ctx||this.muted)return;const C=this.ctx,t=C.currentTime;
+    const o=C.createOscillator(),g=C.createGain();o.type=type;
+    o.frequency.setValueAtTime(f0,t);o.frequency.exponentialRampToValueAtTime(Math.max(f1,1),t+dur);
+    g.gain.setValueAtTime(vol,t);g.gain.exponentialRampToValueAtTime(.001,t+dur);
+    o.connect(g).connect(this.master);o.start(t);o.stop(t+dur); },
+  noise(dur,freq,vol){ if(!this.ctx||this.muted)return;const C=this.ctx,t=C.currentTime;
+    const n=Math.floor(C.sampleRate*dur),b=C.createBuffer(1,n,C.sampleRate),d=b.getChannelData(0);
+    for(let i=0;i<n;i++)d[i]=(Math.random()*2-1)*(1-i/n);
+    const s=C.createBufferSource();s.buffer=b;
+    const f=C.createBiquadFilter();f.type='lowpass';f.frequency.value=freq;
+    const g=C.createGain();g.gain.value=vol;
+    s.connect(f).connect(g).connect(this.master);s.start(t); },
+  door(){this.noise(.16,300,.6);this.blip(90,50,.12,'sine',.3);},
+  shot(){this.noise(.22,3500,.7);},
+  swing(){this.noise(.09,1400,.25);},
+  hit(){this.blip(160,60,.12,'square',.3);},
+  loot(){this.blip(700,900,.06,'square',.12);},
+  eat(){this.blip(300,200,.1,'sine',.2);},
+  howl(){this.blip(340,220,1.6,'sine',.10);},
+  thump(){this.noise(.12,200,.4);}
+};
+
+/* ================= game state ================= */
+let G=null, phase='title';       // title | play | camp | pause | dead
+const T={ // tile ids: 0 grass 1 road 2 wall 3 floor 4 tree (tree draws grass + canopy)
+  colors:['#222e24','#3a3d33','#3d443c','#4a4032','#222e24']
+};
+
+function newGame(seed){
+  const rng=mulberry32(seed);
+  const tiles=new Uint8Array(MW*MH);
+  const at=(x,y)=>tiles[y*MW+x], set=(x,y,v)=>{if(x>=0&&y>=0&&x<MW&&y<MH)tiles[y*MW+x]=v;};
+  // roads
+  const rows=[],cols=[];
+  for(let y=10;y<MH-8;y+=20+Math.floor(rng()*14))rows.push(y);
+  for(let x=10;x<MW-8;x+=22+Math.floor(rng()*16))cols.push(x);
+  for(const y of rows)for(let x=0;x<MW;x++){set(x,y,1);set(x,y+1,1);}
+  for(const x of cols)for(let y=0;y<MH;y++){set(x,y,1);set(x+1,y,1);}
+  // buildings near intersections
+  const buildings=[],crates=[];
+  const types=['house','store','gas','garage'];
+  for(const ry of rows)for(const rx of cols){
+    if(rng()<.32)continue;
+    const n=1+Math.floor(rng()*2.4);
+    for(let i=0;i<n;i++){
+      const bw=6+Math.floor(rng()*4), bh=5+Math.floor(rng()*3);
+      const quad=Math.floor(rng()*4), jx=Math.floor(rng()*5), jy=Math.floor(rng()*4);
+      let bx=quad%2===0 ? rx+3+jx : rx-bw-2-jx;
+      let by=quad<2    ? ry+3+jy : ry-bh-2-jy;
+      bx=clamp(bx,2,MW-bw-2);by=clamp(by,2,MH-bh-2);
+      // reject overlap with road/building
+      let ok=true;
+      for(let y=by-1;y<by+bh+1&&ok;y++)for(let x=bx-1;x<bx+bw+1;x++)if(at(x,y)!==0){ok=false;break;}
+      if(!ok)continue;
+      const type=types[Math.floor(rng()*4)];
+      for(let y=by;y<by+bh;y++)for(let x=bx;x<bx+bw;x++)
+        set(x,y,(y===by||y===by+bh-1||x===bx||x===bx+bw-1)?2:3);
+      // door on the side nearest the intersection
+      const dx0=rx<bx?bx:rx>bx+bw-1?bx+bw-1:clamp(rx,bx+1,bx+bw-2);
+      const doorSide=(Math.abs(ry-by)<Math.abs(ry-(by+bh-1)))?'n':'s';
+      const doorX=clamp(dx0,bx+1,bx+bw-2), doorY=doorSide==='n'?by:by+bh-1;
+      set(doorX,doorY,3);
+      buildings.push({x:bx,y:by,w:bw,h:bh,type,doorX,doorY});
+      const nc=2+Math.floor(rng()*2.4);
+      for(let c=0;c<nc;c++){
+        const cxT=bx+1+Math.floor(rng()*(bw-2)), cyT=by+1+Math.floor(rng()*(bh-2));
+        if(cxT===doorX&&Math.abs(cyT-doorY)<2)continue;
+        if(crates.some(k=>k.tx===cxT&&k.ty===cyT))continue;
+        crates.push({id:crates.length,tx:cxT,ty:cyT,x:cxT*TW+TW/2,y:cyT*TW+TW/2,type,looted:false});
+      }
+    }
+  }
+  // trees
+  for(let y=1;y<MH-1;y++)for(let x=1;x<MW-1;x++){
+    if(at(x,y)!==0)continue;
+    let nearRoad=false;
+    for(let dy=-1;dy<=1;dy++)for(let dxx=-1;dxx<=1;dxx++)if(at(x+dxx,y+dy)===1)nearRoad=true;
+    if(!nearRoad&&hash2(x+seed,y)<.14)set(x,y,4);
+  }
+  // van start: center of nearest road
+  let vx=MW/2*TW,vy=MH/2*TW,best=1e18;
+  for(const y of rows)for(const x of cols){
+    const d=dist2(x*TW,y*TW,vx,vy);if(d<best){best=d;vx=x*TW+TW;vy=y*TW+TW;}
+  }
+  // enemies
+  const enemies=[];
+  for(const b of buildings){
+    const n=1+Math.floor(rng()*2.2);
+    for(let i=0;i<n;i++)enemies.push(spawnEnemy('zombie',(b.x-2+rng()*(b.w+4))*TW,(b.y-3+rng()*(b.h+6))*TW,rng));
+  }
+  for(let p=0;p<14;p++){
+    const px=(10+rng()*(MW-20))*TW, py=(10+rng()*(MH-20))*TW;
+    const tx=Math.floor(px/TW),ty=Math.floor(py/TW);
+    if(at(tx,ty)===0)for(let i=0;i<2+Math.floor(rng()*2);i++)enemies.push(spawnEnemy('wolf',px+rng()*90,py+rng()*90,rng));
+  }
+  return {
+    seed,tiles,buildings,crates,enemies,rng,
+    day:1,time:DAY_LEN*.08,weather:'clear',
+    player:{x:vx,y:vy-40,a:0,hp:100,hunger:100,thirst:100,stam:100,inVan:true,swingT:0,hurtT:0},
+    van:{x:vx,y:vy,a:-Math.PI/2,speed:0,fuel:100,hp:100},
+    inv:{food:2,water:2,fuelcan:1,scrap:2,med:1,ammo:12},
+    bullets:[],sounds:[],nightPack:[],
+    stats:{crates:0,kills:0,dist:0},
+    lightsOn:true,howlT:20+rng()*30
+  };
+}
+function spawnEnemy(kind,x,y,rng){
+  const wolf=kind==='wolf';
+  return {kind,x,y,a:rng()*TAU,hp:wolf?28:46,speed:wolf?150:62,state:'wander',
+          tx:x,ty:y,alertT:0,atkT:0,wT:rng()*4,dead:false};
+}
+
+/* ================= save / load ================= */
+function save(){ if(!G)return; try{ localStorage.setItem(SAVE_KEY,JSON.stringify({
+  seed:G.seed,day:G.day,time:G.time,weather:G.weather,player:G.player,van:G.van,inv:G.inv,
+  stats:G.stats,looted:G.crates.filter(c=>c.looted).map(c=>c.id),lightsOn:G.lightsOn}));}catch(e){} }
+function load(){ try{ const s=JSON.parse(localStorage.getItem(SAVE_KEY)); if(!s||!s.seed)return null;
+  const g=newGame(s.seed);
+  Object.assign(g.player,s.player);Object.assign(g.van,s.van);Object.assign(g.inv,s.inv);
+  Object.assign(g.stats,s.stats);g.day=s.day;g.time=s.time;g.weather=s.weather;g.lightsOn=s.lightsOn!==false;
+  for(const id of s.looted||[])if(g.crates[id])g.crates[id].looted=true;
+  return g; }catch(e){return null;} }
+
+/* ================= messages ================= */
+const logEl=document.getElementById('log');
+function say(txt,cls){ const d=document.createElement('div');d.textContent=txt;if(cls)d.className=cls;
+  logEl.appendChild(d); while(logEl.children.length>4)logEl.firstChild.remove();
+  setTimeout(()=>{d.style.opacity=0;},4200); setTimeout(()=>d.remove(),5400); }
+
+/* ================= world helpers ================= */
+const tileAt=(px,py)=>{const tx=Math.floor(px/TW),ty=Math.floor(py/TW);
+  if(tx<0||ty<0||tx>=MW||ty>=MH)return 2; return G.tiles[ty*MW+tx];};
+function moveCircle(o,nx,ny,r){
+  if(!circleHits(nx,o.y,r))o.x=nx;
+  if(!circleHits(o.x,ny,r))o.y=ny;
+}
+function circleHits(px,py,r){
+  const x0=Math.floor((px-r)/TW),x1=Math.floor((px+r)/TW),y0=Math.floor((py-r)/TW),y1=Math.floor((py+r)/TW);
+  for(let ty=y0;ty<=y1;ty++)for(let tx=x0;tx<=x1;tx++){
+    if(tx<0||ty<0||tx>=MW||ty>=MH)return true;
+    if(SOLID(G.tiles[ty*MW+tx])){
+      const cxp=clamp(px,tx*TW,tx*TW+TW),cyp=clamp(py,ty*TW,ty*TW+TW);
+      if(dist2(px,py,cxp,cyp)<r*r)return true;
+    }
+  } return false;
+}
+function makeSound(x,y,r){ const wet=G.weather==='rain'?.6:1; G.sounds.push({x,y,r:r*wet,life:.6}); }
+const isNight=()=>{const f=G.time/DAY_LEN;return f>NIGHT_START||f<DAWN;};
+function brightness(){ const f=G.time/DAY_LEN;
+  if(f<DAWN+.04)return lerp(.1,1,(f)/(DAWN+.04));
+  if(f<NIGHT_START-.08)return 1;
+  if(f<NIGHT_START+.04)return lerp(1,.1,(f-(NIGHT_START-.08))/.12);
+  return .1; }
+
+/* ================= loot ================= */
+const LOOT={
+  house:[['food',.34],['water',.30],['med',.12],['scrap',.16],['ammo',.08]],
+  store:[['food',.30],['water',.28],['ammo',.16],['med',.10],['scrap',.16]],
+  gas:[['fuelcan',.46],['scrap',.22],['water',.16],['food',.16]],
+  garage:[['scrap',.44],['fuelcan',.26],['ammo',.18],['med',.12]]
+};
+const LOOT_NAMES={food:'a ration',water:'clean water',fuelcan:'a fuel can',scrap:'scrap parts',med:'a medkit',ammo:'revolver rounds'};
+function rollLoot(type){ let r=Math.random(),acc=0;
+  for(const [k,p] of LOOT[type]){acc+=p;if(r<acc)return k;} return 'scrap'; }
+
+/* ================= per-frame update ================= */
+let camX=0,camY=0,searchT=0,searchCrate=null,shootCd=0,promptTxt='';
+
+function update(dt){
+  const P=G.player,V=G.van,night=isNight();
+  // ---- time ----
+  const prevF=G.time/DAY_LEN;
+  G.time+=dt; if(G.time>=DAY_LEN){G.time-=DAY_LEN;G.day++;newDay();}
+  const f=G.time/DAY_LEN;
+  if(prevF<NIGHT_START&&f>=NIGHT_START){say('Night is coming down. Get inside.','warn');spawnNightPack();}
+  // ---- vitals ----
+  P.hunger=Math.max(0,P.hunger-dt*100/560);
+  P.thirst=Math.max(0,P.thirst-dt*100/430);
+  if(P.hunger<=0)P.hp-=dt*1.4;
+  if(P.thirst<=0)P.hp-=dt*1.8;
+  if(P.hurtT>0)P.hurtT-=dt;
+  if(P.swingT>0)P.swingT-=dt;
+  if(shootCd>0)shootCd-=dt;
+  P.stam=clamp(P.stam+dt*14,0,100);
+  if(P.hp<=0){die();return;}
+  promptTxt='';
+  if(P.inVan){ updateVan(dt); }
+  else { updateFoot(dt,night); }
+
+  // ---- bullets ----
+  for(const b of G.bullets){
+    if(b.dead)continue;
+    b.x+=b.vx*dt;b.y+=b.vy*dt;b.life-=dt;
+    if(b.life<=0||SOLID(tileAt(b.x,b.y))){b.dead=true;continue;}
+    for(const e of G.enemies){ if(e.dead)continue;
+      if(dist2(b.x,b.y,e.x,e.y)<18*18){e.hp-=34;e.alertT=8;e.state='chase';b.dead=true;Snd.hit();
+        if(e.hp<=0)kill(e); break; } }
+  }
+  G.bullets=G.bullets.filter(b=>!b.dead);
+  // ---- sounds decay ----
+  for(const s of G.sounds)s.life-=dt;
+  G.sounds=G.sounds.filter(s=>s.life>0);
+  // ---- enemies ----
+  updateEnemies(dt,night);
+  // ---- ambient howls ----
+  G.howlT-=dt;
+  if(G.howlT<=0){G.howlT=25+Math.random()*40;if(night){Snd.howl();say('Something calls out, far off.');}}
+  // ---- camera ----
+  const fx=P.inVan?V.x:P.x, fy=P.inVan?V.y:P.y;
+  camX=lerp(camX,fx,1-Math.pow(.001,dt));camY=lerp(camY,fy,1-Math.pow(.001,dt));
+  // ---- audio ambience ----
+  Snd.setEngine(P.inVan?Math.abs(V.speed)/320:0);
+  Snd.setRain(G.weather==='rain'?1:0);
+}
+
+function newDay(){
+  const r=Math.random();
+  G.weather=r<.5?'clear':r<.76?'rain':'fog';
+  G.nightPack.forEach(e=>e.dead=true);G.nightPack=[];
+  say(`Day ${G.day}. ${G.weather==='clear'?'The sky holds.':G.weather==='rain'?'Rain on the roof.':'Fog sitting low.'}`,'good');
+  save();
+}
+function spawnNightPack(){
+  const P=G.player,V=G.van,ox=P.inVan?V.x:P.x,oy=P.inVan?V.y:P.y;
+  for(let i=0;i<6;i++){
+    const a=Math.random()*TAU,d=760+Math.random()*500;
+    const e=spawnEnemy('zombie',clamp(ox+Math.cos(a)*d,64,MW*TW-64),clamp(oy+Math.sin(a)*d,64,MH*TW-64),Math.random);
+    e.speed=104;e.night=true;G.enemies.push(e);G.nightPack.push(e);
+  }
+}
+
+/* ---- on foot ---- */
+function updateFoot(dt,night){
+  const P=G.player,V=G.van;
+  const sprint=keys.ShiftLeft||keys.ShiftRight, canSprint=sprint&&P.stam>4;
+  const sp=(canSprint?210:120)*dt;
+  if(canSprint&&(keys.KeyW||keys.KeyA||keys.KeyS||keys.KeyD))P.stam-=dt*26;
+  let mx=0,my=0;
+  if(keys.KeyW)my-=1; if(keys.KeyS)my+=1; if(keys.KeyA)mx-=1; if(keys.KeyD)mx+=1;
+  if(mx||my){const l=Math.hypot(mx,my);moveCircle(P,P.x+mx/l*sp,P.y+my/l*sp,11);}
+  P.a=Math.atan2(mouse.y-(P.y-camY+cv.height/2),mouse.x-(P.x-camX+cv.width/2));
+  // shoot
+  if(mouse.down&&shootCd<=0){
+    if(G.inv.ammo>0){G.inv.ammo--;shootCd=.5;Snd.shot();makeSound(P.x,P.y,720);
+      G.bullets.push({x:P.x+Math.cos(P.a)*16,y:P.y+Math.sin(P.a)*16,vx:Math.cos(P.a)*820,vy:Math.sin(P.a)*820,life:.6});}
+    else if(!mouse._dry){say('Click. No rounds left.','warn');mouse._dry=true;setTimeout(()=>mouse._dry=false,900);shootCd=.3;}
+  }
+  // melee
+  if(keys.Space&&P.swingT<=0&&P.stam>8){
+    P.swingT=.42;P.stam-=10;Snd.swing();makeSound(P.x,P.y,140);
+    for(const e of G.enemies){ if(e.dead)continue;
+      if(dist2(P.x,P.y,e.x,e.y)<52*52&&Math.abs(angDiff(P.a,Math.atan2(e.y-P.y,e.x-P.x)))<1.15){
+        e.hp-=26;e.alertT=8;e.state='chase';Snd.hit();
+        const kb=30;e.x+=Math.cos(P.a)*kb;e.y+=Math.sin(P.a)*kb;
+        if(e.hp<=0)kill(e); } }
+  }
+  // interactions
+  const nearVan=dist2(P.x,P.y,V.x,V.y)<80*80;
+  let crate=null,best=46*46;
+  for(const c of G.crates){ if(c.looted)continue;
+    const d=dist2(P.x,P.y,c.x,c.y); if(d<best){best=d;crate=c;} }
+  if(crate){ promptTxt='HOLD F — SEARCH CRATE';
+    if(keys.KeyF){ if(searchCrate!==crate){searchCrate=crate;searchT=0;makeSound(P.x,P.y,260);}
+      searchT+=dt;
+      if(searchT>=1.4){ crate.looted=true;G.stats.crates++;searchCrate=null;searchT=0;
+        const l=rollLoot(crate.type);G.inv[l]=(G.inv[l]||0)+(l==='ammo'?6:1);
+        Snd.loot();say(`Found ${LOOT_NAMES[l]}.`,'good'); } }
+    else {searchCrate=null;searchT=0;}
+  } else {searchCrate=null;searchT=0;}
+  if(nearVan){ promptTxt='E — GET IN THE VAN'; }
+}
+
+/* ---- driving ---- */
+function updateVan(dt){
+  const V=G.van;
+  const fwd=(keys.KeyW?1:0)-(keys.KeyS?.6:0), steer=(keys.KeyD?1:0)-(keys.KeyA?1:0);
+  const onRoad=tileAt(V.x,V.y)===1, maxSp=(onRoad?330:190)*(G.van.hp<=0?0:1);
+  if(V.fuel>0&&fwd)V.speed+=fwd*260*dt; V.speed*=Math.pow(.35,dt);
+  if(!fwd)V.speed-=Math.sign(V.speed)*Math.min(Math.abs(V.speed),80*dt); // roll to a real stop
+  V.speed=clamp(V.speed,-110,maxSp);
+  if(Math.abs(V.speed)>4){
+    V.a+=steer*1.9*dt*clamp(Math.abs(V.speed)/maxSp,.25,1)*Math.sign(V.speed);
+    const nx=V.x+Math.cos(V.a)*V.speed*dt, ny=V.y+Math.sin(V.a)*V.speed*dt;
+    if(circleHits(nx,ny,22)){
+      if(Math.abs(V.speed)>130){V.hp=Math.max(0,V.hp-Math.abs(V.speed)*.05);Snd.thump();say('The chassis takes the hit.','warn');}
+      V.speed*=-.25;
+    } else {
+      G.stats.dist+=Math.abs(V.speed*dt)/1000;
+      V.x=nx;V.y=ny;
+      V.fuel=Math.max(0,V.fuel-Math.abs(V.speed)*dt*.0021);
+      if(V.fuel<=0&&Math.abs(V.speed)>60){say('The tank is dry.','warn');}
+    }
+    if(Math.abs(V.speed)>60)makeSound(V.x,V.y,420);
+    // run things over
+    for(const e of G.enemies){ if(e.dead)continue;
+      if(dist2(V.x,V.y,e.x,e.y)<30*30&&Math.abs(V.speed)>90){
+        e.hp-=Math.abs(V.speed)*.5;V.hp=Math.max(0,V.hp-1.2);Snd.thump();
+        if(e.hp<=0)kill(e); } }
+  }
+  if(Math.abs(V.speed)<8){ promptTxt='E — STEP OUT · R — CAMP'; }
+  if(V.hp<=0&&Math.abs(V.speed)<8)promptTxt='ENGINE DEAD — R TO CAMP AND PATCH IT';
+}
+
+/* ---- enemies ---- */
+function updateEnemies(dt,night){
+  const P=G.player,V=G.van;
+  const fogMul=G.weather==='fog'?.55:1;
+  for(const e of G.enemies){
+    if(e.dead)continue;
+    const px=P.x,py=P.y;
+    const dp=dist2(e.x,e.y,px,py);
+    if(dp>1500*1500)continue; // sleep far entities
+    const wolf=e.kind==='wolf';
+    const sight=(wolf?300:210)*(night?1.35:1)*fogMul;
+    // hear sounds
+    for(const s of G.sounds)if(dist2(e.x,e.y,s.x,s.y)<s.r*s.r){e.tx=s.x;e.ty=s.y;if(e.state!=='chase')e.state='seek';}
+    // see player (only when on foot)
+    if(!P.inVan&&dp<sight*sight){e.state='chase';e.alertT=6;}
+    if(P.inVan&&e.state==='chase'){e.alertT-=dt;if(e.alertT<=0)e.state='wander';}
+    let spd=e.speed*(night?(wolf?1.25:1.5):1);
+    if(e.state==='chase'&&!P.inVan){
+      const a=Math.atan2(py-e.y,px-e.x);e.a=a;
+      moveCircle(e,e.x+Math.cos(a)*spd*dt,e.y+Math.sin(a)*spd*dt,10);
+      if(dp<26*26&&e.atkT<=0){e.atkT=.9;P.hp-=wolf?9:13;P.hurtT=.4;Snd.hit();say(wolf?'Teeth find you.':'It claws at you.','warn');}
+    } else if(e.state==='chase'&&P.inVan){
+      // press against the van, harmless
+      const a=Math.atan2(V.y-e.y,V.x-e.x);e.a=a;
+      if(dist2(e.x,e.y,V.x,V.y)>44*44)moveCircle(e,e.x+Math.cos(a)*spd*.7*dt,e.y+Math.sin(a)*spd*.7*dt,10);
+      else if(e.atkT<=0){e.atkT=1.6;Snd.thump();}
+    } else if(e.state==='seek'){
+      const a=Math.atan2(e.ty-e.y,e.tx-e.x);e.a=a;
+      moveCircle(e,e.x+Math.cos(a)*spd*.6*dt,e.y+Math.sin(a)*spd*.6*dt,10);
+      if(dist2(e.x,e.y,e.tx,e.ty)<40*40)e.state='wander';
+    } else {
+      e.wT-=dt;
+      if(e.wT<=0){e.wT=2+Math.random()*4;e.a=Math.random()*TAU;}
+      moveCircle(e,e.x+Math.cos(e.a)*spd*.22*dt,e.y+Math.sin(e.a)*spd*.22*dt,10);
+    }
+    if(e.atkT>0)e.atkT-=dt;
+  }
+}
+function kill(e){e.dead=true;G.stats.kills++;}
+function die(){ phase='dead';
+  document.getElementById('dDays').textContent=G.day;
+  document.getElementById('dCrates').textContent=G.stats.crates;
+  document.getElementById('dKills').textContent=G.stats.kills;
+  document.getElementById('dDist').textContent=(G.stats.dist*.03).toFixed(1)+' km';
+  try{localStorage.removeItem(SAVE_KEY);}catch(err){}
+  show('deathVeil'); }
+
+/* ================= keys / actions ================= */
+function onKey(code){
+  Snd.unlock();
+  if(phase==='play'){
+    if(code==='KeyE')toggleVan();
+    else if(code==='KeyR'&&G.player.inVan&&Math.abs(G.van.speed)<8)openCamp();
+    else if(code==='Digit1')consume('food');
+    else if(code==='Digit2')consume('water');
+    else if(code==='Digit3')consume('med');
+    else if(code==='KeyM')mini.style.display=mini.style.display==='none'?'block':'none';
+    else if(code==='KeyN')toggleMute();
+    else if(code==='KeyP'||code==='Escape'){phase='pause';show('pauseVeil');}
+  } else if(phase==='camp'&&(code==='KeyR'||code==='Escape')){closeCamp();}
+  else if(phase==='pause'&&(code==='KeyP'||code==='Escape')){phase='play';hideVeils();}
+}
+function toggleVan(){
+  const P=G.player,V=G.van;
+  if(P.inVan){ if(Math.abs(V.speed)>40){say('Too fast to jump out.');return;}
+    // step out beside the door
+    const ox=V.x+Math.cos(V.a+Math.PI/2)*40, oy=V.y+Math.sin(V.a+Math.PI/2)*40;
+    P.x=circleHits(ox,oy,11)?V.x-Math.cos(V.a+Math.PI/2)*40:ox;
+    P.y=circleHits(ox,oy,11)?V.y-Math.sin(V.a+Math.PI/2)*40:oy;
+    P.inVan=false;V.speed=0;Snd.door();Snd.setInside(false);
+    say(isNight()?'The dark is waiting. Move.':'Outside. Stay sharp.','warn');
+  } else if(dist2(P.x,P.y,V.x,V.y)<80*80){
+    P.inVan=true;Snd.door();Snd.setInside(true);
+    say('Doors locked. You are safe in here.','good');
+    for(const e of G.enemies)if(e.state==='chase')e.alertT=Math.min(e.alertT,2.5);
+  }
+}
+function consume(kind){
+  const P=G.player;
+  if((G.inv[kind]|0)<=0){say(`No ${kind==='med'?'medkits':kind} left.`,'warn');return;}
+  if(kind==='food'&&P.hunger>92||kind==='water'&&P.thirst>92||kind==='med'&&P.hp>92){say('Not needed yet.');return;}
+  G.inv[kind]--;Snd.eat();
+  if(kind==='food'){P.hunger=clamp(P.hunger+46,0,100);say('You eat. It helps.','good');}
+  if(kind==='water'){P.thirst=clamp(P.thirst+52,0,100);say('You drink deep.','good');}
+  if(kind==='med'){P.hp=clamp(P.hp+40,0,100);say('Patched up.','good');}
+}
+
+/* ---- camp ---- */
+function openCamp(){ phase='camp';refreshCamp();show('campVeil');G.van.speed=0; }
+function closeCamp(){ phase='play';hideVeils(); }
+function refreshCamp(){
+  document.getElementById('cVh').textContent=Math.round(G.van.hp)+' / 100';
+  document.getElementById('cFu').textContent=Math.round(G.van.fuel)+' / 100';
+  document.getElementById('cInv').textContent=`${G.inv.scrap} · ${G.inv.fuelcan}`;
+  document.getElementById('btnSleep').disabled=!(G.inv.food>0&&G.inv.water>0);
+  document.getElementById('btnRepair').disabled=!(G.inv.scrap>0&&G.van.hp<100);
+  document.getElementById('btnRefuel').disabled=!(G.inv.fuelcan>0&&G.van.fuel<95);
+}
+document.getElementById('btnSleep').onclick=()=>{
+  G.inv.food--;G.inv.water--;
+  const P=G.player;P.hp=clamp(P.hp+35,0,100);P.stam=100;
+  P.hunger=clamp(P.hunger+40,0,100);P.thirst=clamp(P.thirst+40,0,100);
+  G.time=DAY_LEN*DAWN+1;G.day++;newDay();
+  say('You sleep. The van holds the night off.','good');refreshCamp();closeCamp();
+};
+document.getElementById('btnRepair').onclick=()=>{ if(G.inv.scrap>0){G.inv.scrap--;G.van.hp=clamp(G.van.hp+25,0,100);Snd.loot();refreshCamp();} };
+document.getElementById('btnRefuel').onclick=()=>{ if(G.inv.fuelcan>0){G.inv.fuelcan--;G.van.fuel=clamp(G.van.fuel+40,0,100);Snd.loot();refreshCamp();} };
+document.getElementById('btnCampClose').onclick=closeCamp;
+
+/* ---- veils ---- */
+const veils=['titleVeil','campVeil','pauseVeil','deathVeil'];
+function show(id){hideVeils();document.getElementById(id).classList.remove('off');}
+function hideVeils(){for(const v of veils)document.getElementById(v).classList.add('off');}
+function toggleMute(){ Snd.muted=!Snd.muted;
+  if(Snd.ctx)Snd.master.gain.value=Snd.muted?0:(G&&G.player.inVan?.34:.5);
+  document.getElementById('btnMute').textContent='SOUND: '+(Snd.muted?'OFF':'ON');
+  say('Sound '+(Snd.muted?'off.':'on.')); }
+
+document.getElementById('btnNew').onclick=()=>{ startGame(newGame((Math.random()*1e9)|0)); };
+document.getElementById('btnContinue').onclick=()=>{ const g=load(); if(g)startGame(g); };
+document.getElementById('btnResume').onclick=()=>{phase='play';hideVeils();};
+document.getElementById('btnMute').onclick=toggleMute;
+document.getElementById('btnAbandon').onclick=()=>{ try{localStorage.removeItem(SAVE_KEY);}catch(e){} location.reload(); };
+document.getElementById('btnAgain').onclick=()=>{ startGame(newGame((Math.random()*1e9)|0)); };
+
+function startGame(g){ G=g;camX=G.van.x;camY=G.van.y;buildMini();phase='play';hideVeils();
+  Snd.unlock();Snd.setInside(G.player.inVan);
+  say(`Day ${G.day}. The van idles. Everything you need is out there.`,'good'); }
+
+/* ================= minimap ================= */
+const mini=document.getElementById('minimap'), mctx=mini.getContext('2d');
+const miniBase=document.createElement('canvas');miniBase.width=MW;miniBase.height=MH;
+function buildMini(){
+  const b=miniBase.getContext('2d');b.fillStyle='#0c130e';b.fillRect(0,0,MW,MH);
+  for(let y=0;y<MH;y++)for(let x=0;x<MW;x++){
+    const t=G.tiles[y*MW+x];
+    if(t===1){b.fillStyle='#4a4f45';b.fillRect(x,y,1,1);}
+    else if(t===2||t===3){b.fillStyle='#6a5c40';b.fillRect(x,y,1,1);}
+  }
+}
+function drawMini(){
+  mctx.clearRect(0,0,160,160);
+  mctx.drawImage(miniBase,0,0,MW,MH,0,0,160,160);
+  const sx=160/(MW*TW),sy=160/(MH*TW);
+  mctx.fillStyle='#f0a940';mctx.fillRect(G.van.x*sx-2,G.van.y*sy-2,4,4);
+  if(!G.player.inVan){mctx.fillStyle='#e7e2d2';mctx.fillRect(G.player.x*sx-1.5,G.player.y*sy-1.5,3,3);}
+}
+
+/* ================= render ================= */
+const rainDrops=Array.from({length:130},()=>({x:Math.random(),y:Math.random(),v:.9+Math.random()*.6}));
+function render(dt){
+  const W=cv.width,H=cv.height,P=G.player,V=G.van;
+  const ox=camX-W/2, oy=camY-H/2;
+  cx.fillStyle='#141b15';cx.fillRect(0,0,W,H);
+  // tiles
+  const x0=Math.max(0,Math.floor(ox/TW)),x1=Math.min(MW-1,Math.floor((ox+W)/TW));
+  const y0=Math.max(0,Math.floor(oy/TW)),y1=Math.min(MH-1,Math.floor((oy+H)/TW));
+  for(let ty=y0;ty<=y1;ty++)for(let tx=x0;tx<=x1;tx++){
+    const t=G.tiles[ty*MW+tx],sx=tx*TW-ox,sy=ty*TW-oy;
+    cx.fillStyle=T.colors[t];cx.fillRect(sx,sy,TW,TW);
+    if(t===0&&hash2(tx,ty)<.3){cx.fillStyle='#293629';cx.fillRect(sx+((hash2(tx,ty*3)*24)|0),sy+((hash2(tx*7,ty)*24)|0),3,3);}
+    if(t===1&&(tx+ty)%4===0){cx.fillStyle='#4c4f44';cx.fillRect(sx+13,sy+13,6,2);}
+    if(t===4){ const h=hash2(tx,ty), r=12+h*5;
+      cx.fillStyle='#131f14';cx.beginPath();cx.arc(sx+16+h*4-2,sy+16,r,0,TAU);cx.fill();
+      cx.fillStyle='#1b2b1b';cx.beginPath();cx.arc(sx+13+h*4-2,sy+13,r*.55,0,TAU);cx.fill(); }
+  }
+  // crates
+  for(const c of G.crates){
+    if(c.x<ox-40||c.x>ox+W+40||c.y<oy-40||c.y>oy+H+40)continue;
+    cx.fillStyle=c.looted?'#3d3a30':'#7a5c33';
+    cx.fillRect(c.x-ox-9,c.y-oy-9,18,18);
+    cx.strokeStyle='#241d12';cx.strokeRect(c.x-ox-9,c.y-oy-9,18,18);
+  }
+  // enemies
+  for(const e of G.enemies){
+    if(e.dead||e.x<ox-40||e.x>ox+W+40||e.y<oy-40||e.y>oy+H+40)continue;
+    const sx=e.x-ox,sy=e.y-oy;
+    if(e.kind==='wolf'){
+      cx.save();cx.translate(sx,sy);cx.rotate(e.a);
+      cx.fillStyle='#6d6f6a';cx.beginPath();cx.ellipse(0,0,13,7,0,0,TAU);cx.fill();
+      cx.fillStyle='#54564f';cx.beginPath();cx.arc(10,0,5,0,TAU);cx.fill();cx.restore();
+    } else {
+      cx.fillStyle=e.night?'#4e3d43':'#4a5644';cx.beginPath();cx.arc(sx,sy,10,0,TAU);cx.fill();
+      cx.fillStyle='#333d2f';cx.beginPath();cx.arc(sx+Math.cos(e.a)*5,sy+Math.sin(e.a)*5,5,0,TAU);cx.fill();
+    }
+  }
+  // van
+  {
+    const sx=V.x-ox,sy=V.y-oy;
+    cx.save();cx.translate(sx,sy);cx.rotate(V.a);
+    cx.fillStyle='#242a26';cx.fillRect(-30,-17,60,34);           // shadow/base
+    cx.fillStyle=V.hp>35?'#a9a494':'#8a7f6c';cx.fillRect(-28,-15,56,30);
+    cx.fillStyle='#5d6a70';cx.fillRect(12,-12,12,24);            // windshield
+    cx.fillStyle=P.inVan?'#f0a940':'#3a4038';cx.fillRect(-22,-9,22,18); // cabin light when home
+    cx.fillStyle='#1d2320';cx.fillRect(-30,-19,14,4);cx.fillRect(-30,15,14,4);
+    cx.fillRect(14,-19,12,4);cx.fillRect(14,15,12,4);
+    cx.restore();
+  }
+  // player
+  if(!P.inVan){
+    const sx=P.x-ox,sy=P.y-oy;
+    if(P.swingT>.2){cx.strokeStyle='rgba(231,226,210,.6)';cx.lineWidth=3;cx.beginPath();
+      cx.arc(sx,sy,26,P.a-.9,P.a+.9);cx.stroke();}
+    cx.fillStyle=P.hurtT>0?'#c8513a':'#d9d2bd';cx.beginPath();cx.arc(sx,sy,11,0,TAU);cx.fill();
+    cx.fillStyle='#8a8271';cx.beginPath();cx.arc(sx+Math.cos(P.a)*6,sy+Math.sin(P.a)*6,5,0,TAU);cx.fill();
+  }
+  // bullets
+  cx.fillStyle='#f5e9c8';
+  for(const b of G.bullets)cx.fillRect(b.x-ox-2,b.y-oy-2,3,3);
+  // building roofs (hide interiors until you're inside)
+  for(const b of G.buildings){
+    const bx=b.x*TW-ox,by=b.y*TW-oy,bw=b.w*TW,bh=b.h*TW;
+    if(bx>W+40||by>H+40||bx+bw<-40||by+bh<-40)continue;
+    const inside=!P.inVan&&P.x>b.x*TW-8&&P.x<(b.x+b.w)*TW+8&&P.y>b.y*TW-8&&P.y<(b.y+b.h)*TW+8;
+    cx.globalAlpha=inside?.12:1;
+    cx.fillStyle=b.type==='gas'?'#41504e':'#454b3a';
+    cx.fillRect(bx,by,bw,bh);
+    cx.fillStyle='rgba(0,0,0,.18)';cx.fillRect(bx+6,by+6,bw-12,bh-12);
+    cx.strokeStyle='#141a15';cx.lineWidth=2;cx.strokeRect(bx+1,by+1,bw-2,bh-2);cx.lineWidth=1;
+    cx.globalAlpha=1;
+    // door mark
+    cx.fillStyle='#87764f';cx.fillRect(b.doorX*TW-ox+8,b.doorY*TW-oy+(b.doorY===b.y?0:26),16,6);
+  }
+  // ---------- darkness & lights ----------
+  const br=brightness(), fog=G.weather==='fog';
+  const darkA=(1-br)*.93+(fog?.05:0);
+  if(darkA>.02){
+    dx.clearRect(0,0,W,H);
+    dx.fillStyle=`rgba(3,6,9,${darkA})`;dx.fillRect(0,0,W,H);
+    dx.globalCompositeOperation='destination-out';
+    const lm=fog?.55:1;
+    const cut=(x,y,r,a)=>{const g=dx.createRadialGradient(x,y,r*.12,x,y,r);
+      g.addColorStop(0,`rgba(0,0,0,${a})`);g.addColorStop(1,'rgba(0,0,0,0)');
+      dx.fillStyle=g;dx.beginPath();dx.arc(x,y,r,0,TAU);dx.fill();};
+    if(P.inVan){
+      cut(V.x-ox,V.y-oy,150*lm,.95);
+      if(G.lightsOn&&V.hp>0){ // headlight cone
+        const hx=V.x-ox+Math.cos(V.a)*26,hy=V.y-oy+Math.sin(V.a)*26;
+        const g=dx.createRadialGradient(hx,hy,10,hx,hy,340*lm);
+        g.addColorStop(0,'rgba(0,0,0,.95)');g.addColorStop(1,'rgba(0,0,0,0)');
+        dx.fillStyle=g;dx.beginPath();dx.moveTo(hx,hy);
+        dx.arc(hx,hy,340*lm,V.a-.42,V.a+.42);dx.closePath();dx.fill();
+      }
+    } else {
+      cut(P.x-ox,P.y-oy,90*lm,.9);
+      const g=dx.createRadialGradient(P.x-ox,P.y-oy,8,P.x-ox,P.y-oy,300*lm);
+      g.addColorStop(0,'rgba(0,0,0,.95)');g.addColorStop(1,'rgba(0,0,0,0)');
+      dx.fillStyle=g;dx.beginPath();dx.moveTo(P.x-ox,P.y-oy);
+      dx.arc(P.x-ox,P.y-oy,300*lm,P.a-.5,P.a+.5);dx.closePath();dx.fill();
+      cut(V.x-ox,V.y-oy,70*lm,.5); // the van glows faintly: a beacon home
+    }
+    dx.globalCompositeOperation='source-over';
+    cx.drawImage(dark,0,0);
+  }
+  if(fog){cx.fillStyle='rgba(148,158,146,.30)';cx.fillRect(0,0,W,H);}
+  // rain
+  if(G.weather==='rain'){
+    cx.strokeStyle='rgba(180,196,190,.28)';cx.lineWidth=1;cx.beginPath();
+    for(const d of rainDrops){
+      d.y+=d.v*dt*1.4;d.x+=dt*.08;if(d.y>1){d.y-=1;d.x=Math.random();}if(d.x>1)d.x-=1;
+      const rx=d.x*W,ry=d.y*H;cx.moveTo(rx,ry);cx.lineTo(rx-4,ry+13);
+    }cx.stroke();
+  }
+  // interior warmth / hurt vignette
+  if(P.inVan){
+    const g=cx.createRadialGradient(W/2,H/2,H*.22,W/2,H/2,H*.75);
+    g.addColorStop(0,'rgba(240,169,64,.10)');g.addColorStop(1,'rgba(20,12,2,.42)');
+    cx.fillStyle=g;cx.fillRect(0,0,W,H);
+  } else if(P.hp<35){
+    const pulse=reduceMotion?.5:(.4+.25*Math.sin(performance.now()/300));
+    const g=cx.createRadialGradient(W/2,H/2,H*.3,W/2,H/2,H*.8);
+    g.addColorStop(0,'rgba(0,0,0,0)');g.addColorStop(1,`rgba(160,40,25,${pulse*.5})`);
+    cx.fillStyle=g;cx.fillRect(0,0,W,H);
+  }
+  drawMini();
+}
+
+/* ================= HUD ================= */
+const $=id=>document.getElementById(id);
+const hud={hpB:$('hpB'),hpN:$('hpN'),huB:$('huB'),huN:$('huN'),thB:$('thB'),thN:$('thN'),
+  fuB:$('fuB'),fuN:$('fuN'),vhB:$('vhB'),vhN:$('vhN'),day:$('dayLbl'),time:$('timeLbl'),wx:$('wxLbl'),
+  prompt:$('prompt'),sb:$('searchbar'),sf:$('searchFi'),
+  inv:{food:$('iFood'),water:$('iWater'),fuelcan:$('iFuel'),scrap:$('iScrap'),med:$('iMed'),ammo:$('iAmmo')}};
+function drawHUD(){
+  const P=G.player,V=G.van;
+  const setBar=(b,n,v)=>{b.style.width=clamp(v,0,100)+'%';n.textContent=Math.round(clamp(v,0,100));};
+  setBar(hud.hpB,hud.hpN,P.hp);setBar(hud.huB,hud.huN,P.hunger);setBar(hud.thB,hud.thN,P.thirst);
+  setBar(hud.fuB,hud.fuN,V.fuel);setBar(hud.vhB,hud.vhN,V.hp);
+  hud.day.textContent='DAY '+G.day;
+  const mins=(G.time/DAY_LEN*24*60+6*60)%1440;
+  hud.time.textContent=String(Math.floor(mins/60)).padStart(2,'0')+':'+String(Math.floor(mins%60)).padStart(2,'0');
+  hud.wx.textContent=G.weather.toUpperCase()+(isNight()?' · NIGHT':'');
+  hud.wx.style.color=isNight()?'var(--rust)':'var(--dim)';
+  for(const k in hud.inv)hud.inv[k].textContent=G.inv[k]|0;
+  hud.prompt.textContent=promptTxt;hud.prompt.classList.toggle('on',!!promptTxt);
+  hud.sb.classList.toggle('on',searchT>0);
+  hud.sf.style.width=clamp(searchT/1.4*100,0,100)+'%';
+}
+
+/* ================= main loop ================= */
+let last=performance.now(),saveT=0;
+function frame(now){
+  const dt=Math.min(.05,(now-last)/1000);last=now;
+  if(phase==='play'&&G){
+    update(dt);render(dt);drawHUD();
+    saveT+=dt;if(saveT>25){saveT=0;save();}
+  } else if(G&&(phase==='camp'||phase==='pause')){ render(0);drawHUD(); }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+/* ================= boot ================= */
+(function boot(){
+  const s=(()=>{try{return JSON.parse(localStorage.getItem(SAVE_KEY));}catch(e){return null;}})();
+  const btn=document.getElementById('btnContinue');
+  if(s&&s.seed){btn.style.display='';document.getElementById('contDay').textContent=s.day;}
+  else btn.style.display='none';
+})();
+</script>
