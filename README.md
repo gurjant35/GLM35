@@ -1,22 +1,34 @@
 # GLM35
 
-Two single-file browser apps, no build step, no server — save the `.html` file
-and open it.
+Two browser apps with no build step. Open the HTML files directly or serve the
+folder with any static web host.
 
 ## Safe Inside
 
-A playable 3D prototype of the survival game described in `GAME_DESIGN.md`:
-an open world where your van is the only safe place. Drive, park, step out to
-scavenge, and get back behind the doors before the night — or whatever heard
-you — arrives. Inspired by Last Day on Earth's scavenge-and-stash loop.
+A playable first-person 3D survival game based on `GAME_DESIGN.md`. The RV is a
+fully walkable safe zone. Tapping INSIDE near its door moves the player inside
+immediately, locks the doors, and prevents all enemy damage.
 
-**Play it:** open `safe-inside.html` in a browser. Works on phones (touch
-joystick + buttons, landscape is best) and desktop (WASD + mouse).
-Three.js-rendered world (engine inlined, fully offline) with real-time
-shadows, horror nights with glowing-eyed dead, dynamic weather with
-lightning, a backpack slot-grid with crafting, pistol + bat combat with
-auto-aim, chests/wrecks/tree-chopping, camp menu (sleep · repair · refuel),
-and autosave to local storage.
+**Play it:** open `safe-inside.html` in Chrome or serve this folder from a
+static host. Android landscape mode is the primary target. The OnePlus 12 uses
+the balanced preset by default, with adaptive resolution to protect the frame
+rate. Desktop controls are also supported.
+
+The game includes:
+
+- True first-person camera, touch look, movement joystick, visible carbine and hands
+- Landscape Android HUD with FIRE, USE, RELOAD, PACK, INSIDE, and OUTSIDE controls
+- Detailed RV kitchen, fridge, television, bedroom, washroom, shower, and storage
+- Instant RV safety, automatic door locking, safe cooking, resting, sleeping, and saving
+- Twenty-slot backpack, consumable food and water, materials, ammunition, and crafting
+- Dense procedural forest, cabins, supply crates, harvestable trees, rocks, rain, fog, lightning, stars, and moonlight
+- Short dim daytime and a longer, darker night with more numerous and faster enemies
+- Health, hunger, thirst, stamina, rifle combat, mobile aim assistance, and local autosave
+- Balanced and high-quality modes plus automatic render-scale adjustment for stable mobile performance
+
+Runtime files are `safe-inside.html`, `safe-inside-v2.css`, and
+`safe-inside-game.js`. Three.js remains embedded in the HTML, so no package
+installation is required.
 
 ## Momentum
 
