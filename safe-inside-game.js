@@ -8,7 +8,7 @@
 
   document.body.className = 'si2';
   document.body.innerHTML = `
-    <canvas id="si-game" aria-label="Safe Inside first-person survival game"></canvas>
+    <canvas id="si-game" aria-label="Safe Inside first and third-person survival game"></canvas>
     <div id="si-vignette"></div>
     <div id="si-damage"></div>
     <div id="si-rain-glass"></div>
@@ -28,8 +28,16 @@
       <div class="si-top-center"><div id="si-objective" class="si-glass">Prepare inside the RV, then collect supplies before dark.</div></div>
       <div class="si-top-right">
         <div id="si-zone" class="si-glass safe"><span id="si-zone-dot"></span><span id="si-zone-text">RV SAFE ZONE</span></div>
-        <div id="si-ammo" class="si-glass"><span id="si-mag">30</span><span id="si-reserve"> / 48</span></div>
+        <div id="si-ammo" class="si-glass"><span id="si-mag">30</span><span id="si-reserve"> / ∞</span></div>
         <div id="si-pack-readout" class="si-glass">BACKPACK <span id="si-pack-count">6 / 20</span></div>
+      </div>
+      <div id="si-minimap-wrap" class="si-glass">
+        <canvas id="si-minimap" width="180" height="180" aria-label="Local minimap"></canvas>
+        <span id="si-minimap-label">LOCAL MAP · 60 M</span>
+      </div>
+      <div id="si-vehicle-hud" class="si-glass">
+        <span id="si-vehicle-mode">RV PARKED</span>
+        <b><span id="si-speed">0</span> KM/H</b>
       </div>
       <div id="si-compass">N&nbsp;&nbsp;&nbsp;NE&nbsp;&nbsp;&nbsp;E</div>
       <div id="si-crosshair"><span></span></div>
@@ -38,11 +46,17 @@
       <div id="si-toast-stack"></div>
     </div>
 
-    <div id="si-look-zone" aria-label="Swipe to look"></div>
-    <div id="si-stick" aria-label="Movement joystick"><div id="si-knob"></div></div>
+    <div id="si-look-zone" aria-label="Swipe anywhere on the right half to look"></div>
+    <div id="si-stick" aria-label="Move from anywhere on the left half">
+      <div id="si-stick-base"><div id="si-knob"></div></div>
+    </div>
     <div id="si-mobile-buttons">
       <div class="si-button-column">
+        <button id="si-camera-button" class="si-touch-button" aria-label="Change camera">CAM<br>FPP</button>
         <button id="si-pack-button" class="si-touch-button" aria-label="Open backpack">PACK</button>
+      </div>
+      <div class="si-button-column">
+        <button id="si-drive-button" class="si-touch-button" aria-label="Drive RV">DRIVE</button>
         <button id="si-rv-button" class="si-touch-button" aria-label="Go outside">OUTSIDE</button>
       </div>
       <div class="si-button-column">
@@ -51,17 +65,17 @@
       </div>
       <button id="si-fire" class="si-touch-button" aria-label="Fire weapon">FIRE</button>
     </div>
-    <div id="si-desktop-help" class="si-glass">WASD MOVE · MOUSE LOOK · SHIFT RUN · CLICK FIRE · E USE · V RV · B PACK · R RELOAD · F LIGHT</div>
+    <div id="si-desktop-help" class="si-glass">WASD MOVE/DRIVE · MOUSE LOOK · SHIFT RUN · CLICK FIRE · C CAMERA · G DRIVE · E USE · V RV · B PACK · R RELOAD · F LIGHT</div>
     <div id="si-fps">60 FPS · BALANCED</div>
 
     <div id="si-start" class="si-overlay">
       <div class="si-card">
-        <p class="si-kicker">First-person mobile survival</p>
+        <p class="si-kicker">FPP + TPP mobile survival</p>
         <h1>Safe <span>Inside</span></h1>
-        <p class="si-lead">Your RV is the only place nothing can harm you. Search the dark forest for food, water, wood, medicine, and ammunition. Get back inside before the long night becomes dangerous.</p>
+        <p class="si-lead">Drive your RV and explore on foot in first or third person. Search the dark forest for food, water, wood, and medicine. Your ammunition reserve is unlimited, and the locked RV remains completely safe.</p>
         <div class="si-feature-grid">
           <div class="si-feature"><b>Instant safety</b><span>Tap INSIDE near the RV. The doors lock and enemies cannot damage you.</span></div>
-          <div class="si-feature"><b>Working RV</b><span>Walk through the kitchen, washroom, bedroom, storage, and TV area.</span></div>
+          <div class="si-feature"><b>Driveable RV</b><span>Drive in FPP or TPP, then walk through the kitchen, washroom, bedroom, storage, and TV area.</span></div>
           <div class="si-feature"><b>Long nights</b><span>Dim days are short. Nights are darker, longer, and filled with stronger enemies.</span></div>
         </div>
         <div class="si-row">
@@ -105,7 +119,17 @@
   const CYCLE_SECONDS = 300;
   const DAY_START = 0.08;
   const DAY_END = 0.42;
-  const RV = { x: 0, z: 0, width: 3.6, length: 8.8, doorX: 2.05, doorZ: 1.55 };
+  const RV = {
+    x: 0,
+    z: 0,
+    yaw: 0,
+    width: 3.6,
+    length: 8.8,
+    localDoorX: 2.05,
+    localDoorZ: 1.55,
+    doorX: 2.05,
+    doorZ: 1.55
+  };
   const coarsePointer = matchMedia('(pointer: coarse)').matches;
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -118,9 +142,12 @@
     day: $('si-day'), time: $('si-time'), weather: $('si-weather'), objective: $('si-objective'),
     zone: $('si-zone'), zoneText: $('si-zone-text'), mag: $('si-mag'), reserve: $('si-reserve'), packCount: $('si-pack-count'),
     compass: $('si-compass'), prompt: $('si-prompt'), toast: $('si-toast-stack'), hitmarker: $('si-hitmarker'), damage: $('si-damage'),
-    rvButton: $('si-rv-button'), packButton: $('si-pack-button'), reloadButton: $('si-reload'), useButton: $('si-use'), fireButton: $('si-fire'),
+    rvButton: $('si-rv-button'), driveButton: $('si-drive-button'), cameraButton: $('si-camera-button'), packButton: $('si-pack-button'),
+    reloadButton: $('si-reload'), useButton: $('si-use'), fireButton: $('si-fire'),
+    minimap: $('si-minimap'), vehicleHud: $('si-vehicle-hud'), vehicleMode: $('si-vehicle-mode'), speed: $('si-speed'),
     fps: $('si-fps')
   };
+  const minimapContext = UI.minimap.getContext('2d');
 
   let qualityMode = 'balanced';
   let renderScale = coarsePointer ? 1.28 : 1.5;
@@ -132,6 +159,7 @@
   let selectedSlot = -1;
   let saveTimer = 0;
   let elapsed = 0;
+  let minimapTimer = 0;
 
   const canvas = $('si-game');
   const renderer = new THREE.WebGLRenderer({
@@ -151,7 +179,7 @@
   scene.background = new THREE.Color(0x1d2a30);
   scene.fog = new THREE.FogExp2(0x1d2a30, 0.009);
 
-  const camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, 0.06, 430);
+  const camera = new THREE.PerspectiveCamera(74, innerWidth / innerHeight, 0.06, 430);
   camera.rotation.order = 'YXZ';
   scene.add(camera);
 
@@ -230,6 +258,16 @@
         g.stroke();
       }
     }, 70, 70),
+    groundBump: makeCanvasTexture(256, (g, size) => {
+      g.fillStyle = '#777';
+      g.fillRect(0, 0, size, size);
+      for (let i = 0; i < 5000; i += 1) {
+        const shade = 70 + Math.floor(Math.random() * 90);
+        g.fillStyle = `rgb(${shade},${shade},${shade})`;
+        const radius = 0.5 + Math.random() * 2.2;
+        g.fillRect(Math.random() * size, Math.random() * size, radius, radius);
+      }
+    }, 70, 70),
     wood: makeCanvasTexture(256, (g, size) => {
       g.fillStyle = '#664936';
       g.fillRect(0, 0, size, size);
@@ -256,19 +294,20 @@
       }
     }, 3, 3)
   };
+  textures.groundBump.encoding = THREE.LinearEncoding;
 
   const materials = {
-    ground: new THREE.MeshStandardMaterial({ map: textures.ground, color: 0x879181, roughness: 1 }),
-    trunk: new THREE.MeshStandardMaterial({ color: 0x4d3828, roughness: 1 }),
-    needles: new THREE.MeshStandardMaterial({ color: 0x1c3527, roughness: 1 }),
+    ground: new THREE.MeshStandardMaterial({ map: textures.ground, bumpMap: textures.groundBump, bumpScale: 0.11, color: 0x879181, roughness: 0.96 }),
+    trunk: new THREE.MeshStandardMaterial({ map: textures.wood, color: 0x58402e, roughness: 0.98 }),
+    needles: new THREE.MeshStandardMaterial({ color: 0x203a2b, roughness: 0.94 }),
     rock: new THREE.MeshStandardMaterial({ color: 0x555c59, roughness: 0.95 }),
     cabin: new THREE.MeshStandardMaterial({ color: 0x574b3c, roughness: 0.95 }),
     roof: new THREE.MeshStandardMaterial({ color: 0x282c2c, roughness: 0.85 }),
     metal: new THREE.MeshStandardMaterial({ color: 0x727b79, metalness: 0.72, roughness: 0.42 }),
     darkMetal: new THREE.MeshStandardMaterial({ color: 0x1a2022, metalness: 0.78, roughness: 0.36 }),
-    rvBody: new THREE.MeshStandardMaterial({ color: 0xc5c4b8, metalness: 0.22, roughness: 0.4 }),
+    rvBody: new THREE.MeshPhysicalMaterial({ color: 0xc9c8bd, metalness: 0.3, roughness: 0.34, clearcoat: 0.38, clearcoatRoughness: 0.42 }),
     rvTrim: new THREE.MeshStandardMaterial({ color: 0x334c45, metalness: 0.42, roughness: 0.38 }),
-    glass: new THREE.MeshStandardMaterial({ color: 0x172b33, metalness: 0.1, roughness: 0.18, emissive: 0x071018, emissiveIntensity: 0.7 }),
+    glass: new THREE.MeshPhysicalMaterial({ color: 0x18303a, metalness: 0.08, roughness: 0.12, clearcoat: 0.9, clearcoatRoughness: 0.08, emissive: 0x071018, emissiveIntensity: 0.5 }),
     interiorWall: new THREE.MeshStandardMaterial({ color: 0xd4cdbd, roughness: 0.76, side: THREE.DoubleSide }),
     floor: new THREE.MeshStandardMaterial({ map: textures.wood, color: 0xb9a08c, roughness: 0.76 }),
     fabric: new THREE.MeshStandardMaterial({ map: textures.fabric, color: 0xa9b1aa, roughness: 0.9 }),
@@ -299,6 +338,7 @@
 
   const world = {
     trees: [],
+    cabins: [],
     crates: [],
     enemies: [],
     enemyHitMeshes: [],
@@ -312,10 +352,14 @@
     rvGroup: null,
     rvDoor: null,
     rvLockLight: null,
+    rvWheels: [],
+    rvHeadlight: null,
     tvScreen: null,
     tvContext: null,
     tvTexture: null,
     interiorLights: [],
+    playerAvatar: null,
+    grass: null,
     nightWaveDay: 0
   };
 
@@ -348,6 +392,38 @@
     mesh.receiveShadow = shadow;
     parent.add(mesh);
     return mesh;
+  }
+
+  const rvTransformScratch = new THREE.Vector3();
+  function rvLocalToWorld(localX, localZ, target = new THREE.Vector3()) {
+    const cosine = Math.cos(RV.yaw);
+    const sine = Math.sin(RV.yaw);
+    return target.set(
+      RV.x + cosine * localX + sine * localZ,
+      0,
+      RV.z - sine * localX + cosine * localZ
+    );
+  }
+
+  function worldToRVLocal(worldX, worldZ, target = { x: 0, z: 0 }) {
+    const dx = worldX - RV.x;
+    const dz = worldZ - RV.z;
+    const cosine = Math.cos(RV.yaw);
+    const sine = Math.sin(RV.yaw);
+    target.x = cosine * dx - sine * dz;
+    target.z = sine * dx + cosine * dz;
+    return target;
+  }
+
+  function syncRVTransform() {
+    if (world.rvGroup) {
+      world.rvGroup.position.set(RV.x, 0, RV.z);
+      world.rvGroup.rotation.y = RV.yaw;
+      world.rvGroup.updateMatrixWorld(true);
+    }
+    rvLocalToWorld(RV.localDoorX, RV.localDoorZ, rvTransformScratch);
+    RV.doorX = rvTransformScratch.x;
+    RV.doorZ = rvTransformScratch.z;
   }
 
   function toast(text, type = '') {
@@ -505,6 +581,7 @@
     const position = new THREE.Vector3();
     const scale = new THREE.Vector3();
     const up = new THREE.Vector3(0, 1, 0);
+    const instanceColor = new THREE.Color();
     world.trees.length = 0;
     for (let i = 0; i < treeCount; i += 1) {
       let x;
@@ -519,16 +596,52 @@
       position.set(x, 1.3 * treeScale, z);
       matrix.compose(position, quaternion, scale);
       world.treeTrunks.setMatrixAt(i, matrix);
+      instanceColor.setHSL(0.075 + rng() * 0.025, 0.28, 0.24 + rng() * 0.08);
+      world.treeTrunks.setColorAt(i, instanceColor);
       position.set(x, 4.1 * treeScale, z);
       matrix.compose(position, quaternion, scale);
       world.treeCrowns.setMatrixAt(i, matrix);
+      instanceColor.setHSL(0.34 + rng() * 0.025, 0.34 + rng() * 0.1, 0.13 + rng() * 0.07);
+      world.treeCrowns.setColorAt(i, instanceColor);
       const tree = { id: i, x, z, scale: treeScale, wood: 3, active: true };
       tree.collider = addCollider({ x, z, r: 0.42 * treeScale, active: true, type: 'tree', ref: tree });
       world.trees.push(tree);
     }
     world.treeTrunks.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     world.treeCrowns.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    if (world.treeTrunks.instanceColor) world.treeTrunks.instanceColor.needsUpdate = true;
+    if (world.treeCrowns.instanceColor) world.treeCrowns.instanceColor.needsUpdate = true;
     scene.add(world.treeTrunks, world.treeCrowns);
+
+    const grassCount = coarsePointer ? 460 : 720;
+    const grassGeometry = new THREE.PlaneGeometry(0.12, 0.62);
+    grassGeometry.translate(0, 0.31, 0);
+    const grassMaterial = new THREE.MeshStandardMaterial({
+      color: 0x334c35,
+      roughness: 1,
+      side: THREE.DoubleSide,
+      alphaTest: 0.1
+    });
+    world.grass = new THREE.InstancedMesh(grassGeometry, grassMaterial, grassCount);
+    world.grass.receiveShadow = true;
+    for (let i = 0; i < grassCount; i += 1) {
+      let x;
+      let z;
+      do {
+        x = (rng() * 2 - 1) * WORLD_SIZE;
+        z = (rng() * 2 - 1) * WORLD_SIZE;
+      } while (Math.abs(x) < 8 && Math.abs(z) < 11);
+      quaternion.setFromAxisAngle(up, rng() * TAU);
+      const grassScale = 0.55 + rng() * 1.25;
+      scale.set(grassScale, grassScale, grassScale);
+      position.set(x, 0.01, z);
+      matrix.compose(position, quaternion, scale);
+      world.grass.setMatrixAt(i, matrix);
+      instanceColor.setHSL(0.29 + rng() * 0.06, 0.26 + rng() * 0.16, 0.14 + rng() * 0.08);
+      world.grass.setColorAt(i, instanceColor);
+    }
+    if (world.grass.instanceColor) world.grass.instanceColor.needsUpdate = true;
+    scene.add(world.grass);
 
     const rockCount = 72;
     const rocks = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(1, 0), materials.rock, rockCount);
@@ -571,6 +684,7 @@
       roof.rotation.y = cabin.rotation.y + Math.PI / 4;
       roof.castShadow = true;
       scene.add(roof);
+      world.cabins.push({ x, z, yaw: cabin.rotation.y });
       addCollider({ x, z, r: 4.25, active: true, type: 'cabin' });
       makeCrate(x + (rng() - 0.5) * 10, z + (rng() - 0.5) * 9, rng, i % 3 === 0 ? 'food' : 'supply');
       makeCrate(x + (rng() - 0.5) * 11, z + (rng() - 0.5) * 10, rng, i % 2 === 0 ? 'water' : 'supply');
@@ -589,6 +703,7 @@
 
     buildRV();
     buildWeapon();
+    buildPlayerAvatar();
   }
 
   function makeCrate(x, z, rng, type) {
@@ -614,7 +729,6 @@
   function buildRV() {
     const rv = new THREE.Group();
     world.rvGroup = rv;
-    rv.position.set(RV.x, 0, RV.z);
 
     addBox(rv, [RV.width, 3.25, RV.length], [0, 1.84, 0], materials.rvBody);
     addBox(rv, [RV.width + 0.08, 0.34, 5.1], [0, 0.67, -0.35], materials.rvTrim);
@@ -631,6 +745,7 @@
       mesh.position.set(wheel[0], wheel[1], wheel[2]);
       mesh.castShadow = true;
       rv.add(mesh);
+      world.rvWheels.push(mesh);
     }
 
     addBox(rv, [2.8, 0.12, 4.8], [0, 3.55, -0.15], materials.darkMetal);
@@ -638,12 +753,12 @@
     addBox(rv, [1.0, 0.22, 1.0], [-0.75, 3.68, -1.2], materials.darkMetal);
 
     const doorMaterial = new THREE.MeshStandardMaterial({ color: 0xb6b5a9, roughness: 0.48, metalness: 0.16 });
-    world.rvDoor = addBox(rv, [0.09, 2.35, 1.18], [1.84, 1.69, RV.doorZ], doorMaterial);
-    const handle = addBox(rv, [0.12, 0.08, 0.24], [1.92, 1.75, RV.doorZ + 0.31], materials.darkMetal, null, false);
+    world.rvDoor = addBox(rv, [0.09, 2.35, 1.18], [1.84, 1.69, RV.localDoorZ], doorMaterial);
+    const handle = addBox(rv, [0.12, 0.08, 0.24], [1.92, 1.75, RV.localDoorZ + 0.31], materials.darkMetal, null, false);
     handle.userData.name = 'RV door handle';
     const lockMaterial = new THREE.MeshStandardMaterial({ color: 0x69d395, emissive: 0x2e9c5d, emissiveIntensity: 1.6 });
     world.rvLockLight = new THREE.Mesh(new THREE.SphereGeometry(0.055, 8, 8), lockMaterial);
-    world.rvLockLight.position.set(1.92, 2.25, RV.doorZ + 0.34);
+    world.rvLockLight.position.set(1.92, 2.25, RV.localDoorZ + 0.34);
     rv.add(world.rvLockLight);
 
     const floor = addBox(rv, [3.1, 0.12, 8.05], [0, 0.45, -0.08], materials.floor);
@@ -653,7 +768,10 @@
     addBox(rv, [0.08, 2.72, 4.62], [1.56, 1.85, -1.76], materials.interiorWall, null, false);
     addBox(rv, [0.08, 2.72, 1.22], [1.56, 1.85, 3.25], materials.interiorWall, null, false);
     addBox(rv, [3.05, 2.72, 0.08], [0, 1.85, -4.05], materials.interiorWall, null, false);
-    addBox(rv, [3.05, 2.72, 0.08], [0, 1.85, 3.94], materials.interiorWall, null, false);
+    addBox(rv, [3.05, 0.82, 0.08], [0, 0.86, 3.94], materials.counter, null, false);
+    addBox(rv, [3.05, 0.2, 0.08], [0, 3.06, 3.94], materials.interiorWall, null, false);
+    addBox(rv, [0.16, 2.1, 0.08], [-1.47, 2.0, 3.94], materials.interiorWall, null, false);
+    addBox(rv, [0.16, 2.1, 0.08], [1.47, 2.0, 3.94], materials.interiorWall, null, false);
 
     const warmLightA = new THREE.PointLight(0xffd7a0, 1.15, 6.5, 2);
     warmLightA.position.set(0, 2.85, 2.1);
@@ -677,6 +795,17 @@
 
     addBox(rv, [1.05, 0.72, 2.2], [1.0, 0.88, 2.3], materials.fabric);
     addBox(rv, [0.3, 0.95, 2.2], [1.43, 1.25, 2.3], materials.fabric);
+    addBox(rv, [0.72, 0.3, 0.74], [-0.62, 0.74, 3.22], materials.fabric);
+    addBox(rv, [0.72, 0.82, 0.24], [-0.62, 1.19, 3.52], materials.fabric, [-0.08, 0, 0]);
+    addBox(rv, [1.42, 0.5, 0.45], [-0.45, 1.22, 3.75], materials.counter, [-0.12, 0, 0]);
+    const steeringWheel = new THREE.Mesh(
+      new THREE.TorusGeometry(0.24, 0.032, 8, 20),
+      materials.darkMetal
+    );
+    steeringWheel.position.set(-0.62, 1.62, 3.45);
+    steeringWheel.rotation.x = -0.55;
+    rv.add(steeringWheel);
+    addCylinder(rv, 0.035, 0.035, 0.32, 8, [-0.62, 1.42, 3.58], materials.darkMetal, [0.55, 0, 0], false);
     addBox(rv, [0.14, 1.12, 1.55], [-1.47, 2.12, -1.45], materials.black, null, false);
 
     const tvCanvas = document.createElement('canvas');
@@ -706,7 +835,15 @@
     addBox(rv, [0.92, 0.08, 1.02], [1.05, 1.75, 0.25], materials.counter);
     addBox(rv, [0.07, 0.6, 0.55], [0.58, 1.35, 0.25], materials.darkMetal, null, false);
 
+    world.rvHeadlight = new THREE.SpotLight(0xfff2cf, 0, 42, 0.48, 0.45, 1.3);
+    world.rvHeadlight.position.set(0, 1.22, 4.45);
+    const headlightTarget = new THREE.Object3D();
+    headlightTarget.position.set(0, 0.55, 15);
+    rv.add(world.rvHeadlight, headlightTarget);
+    world.rvHeadlight.target = headlightTarget;
+
     world.interactables = [
+      { id: 'driver', x: -0.62, z: 3.15, radius: 1.85, label: 'DRIVE RV', title: 'Driver Seat', description: 'Start the RV and drive using the entire left-side movement zone. Switch FPP or TPP at any time.', type: 'rv' },
       { id: 'stove', x: -1.0, z: 1.35, radius: 2.15, label: 'USE STOVE', title: 'RV Kitchen', description: 'Cook a hot meal using one raw food and one wood.', type: 'rv' },
       { id: 'fridge', x: -1.0, z: -0.05, radius: 1.9, label: 'OPEN FRIDGE', title: 'Fridge', description: 'Check your food and water supplies.', type: 'rv' },
       { id: 'tv', x: -0.9, z: -1.42, radius: 2.1, label: 'USE TV', title: 'Weather Television', description: 'Watch the emergency weather and survival broadcast.', type: 'rv' },
@@ -717,6 +854,7 @@
 
     updateTVScreen(false);
     scene.add(rv);
+    syncRVTransform();
   }
 
   function updateTVScreen(on) {
@@ -746,7 +884,7 @@
       g.fillStyle = '#83d3a4';
       g.fillRect(26, 211, 460, 3);
       g.font = '17px monospace';
-      g.fillText('COLLECT WATER · FOOD · WOOD · AMMUNITION', 26, 249);
+      g.fillText('COLLECT WATER · FOOD · WOOD · MEDICINE', 26, 249);
     }
     world.tvTexture.needsUpdate = true;
     if (world.tvScreen && world.tvScreen.material) world.tvScreen.material.color.setHex(on ? 0xffffff : 0x111111);
@@ -815,6 +953,103 @@
     camera.add(group);
   }
 
+  function buildPlayerAvatar() {
+    const group = new THREE.Group();
+    const jacket = new THREE.MeshStandardMaterial({ color: 0x354640, roughness: 0.88 });
+    const trousers = new THREE.MeshStandardMaterial({ color: 0x242d2c, roughness: 0.94 });
+    const skin = new THREE.MeshStandardMaterial({ color: 0xb98561, roughness: 0.86 });
+    const boots = new THREE.MeshStandardMaterial({ color: 0x171b1b, roughness: 0.9 });
+    const packMaterial = new THREE.MeshStandardMaterial({ color: 0x59624d, roughness: 0.93 });
+    const strapMaterial = new THREE.MeshStandardMaterial({ color: 0x272d28, roughness: 0.95 });
+    const rifleMaterial = new THREE.MeshStandardMaterial({ color: 0x202728, metalness: 0.74, roughness: 0.34 });
+
+    const hips = addBox(group, [0.48, 0.3, 0.3], [0, 0.82, 0.01], trousers);
+    const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.32, 0.72, 10), jacket);
+    torso.position.set(0, 1.27, 0);
+    torso.scale.z = 0.72;
+    group.add(torso);
+    const collar = addCylinder(group, 0.13, 0.15, 0.16, 10, [0, 1.68, 0], jacket);
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.2, 14, 11), skin);
+    head.position.set(0, 1.91, -0.015);
+    head.scale.set(0.92, 1.08, 0.9);
+    group.add(head);
+    addBox(group, [0.22, 0.08, 0.16], [0, 2.08, 0.02], boots, null, false);
+
+    const makeLeg = (x) => {
+      const pivot = new THREE.Group();
+      pivot.position.set(x, 0.77, 0);
+      const leg = addCylinder(pivot, 0.09, 0.105, 0.7, 9, [0, -0.34, 0], trousers);
+      const boot = addBox(pivot, [0.2, 0.18, 0.34], [0, -0.72, -0.07], boots);
+      group.add(pivot);
+      return { pivot, leg, boot };
+    };
+    const leftLeg = makeLeg(-0.15);
+    const rightLeg = makeLeg(0.15);
+
+    const makeArm = (x) => {
+      const pivot = new THREE.Group();
+      pivot.position.set(x, 1.52, 0);
+      const upper = addCylinder(pivot, 0.075, 0.09, 0.5, 9, [0, -0.23, 0], jacket);
+      const hand = new THREE.Mesh(new THREE.SphereGeometry(0.085, 9, 7), skin);
+      hand.position.set(0, -0.52, -0.03);
+      pivot.add(hand);
+      group.add(pivot);
+      return { pivot, upper, hand };
+    };
+    const leftArm = makeArm(-0.32);
+    const rightArm = makeArm(0.32);
+    leftArm.pivot.rotation.set(-1.08, 0, -0.16);
+    rightArm.pivot.rotation.set(-1.02, 0, 0.16);
+
+    const backpack = new THREE.Group();
+    addBox(backpack, [0.52, 0.7, 0.28], [0, 1.32, 0.25], packMaterial);
+    addBox(backpack, [0.44, 0.19, 0.3], [0, 0.92, 0.25], packMaterial);
+    addBox(backpack, [0.05, 0.82, 0.05], [-0.24, 1.33, 0.08], strapMaterial, [0, 0, -0.12], false);
+    addBox(backpack, [0.05, 0.82, 0.05], [0.24, 1.33, 0.08], strapMaterial, [0, 0, 0.12], false);
+    group.add(backpack);
+
+    const rifle = new THREE.Group();
+    addBox(rifle, [0.16, 0.18, 0.72], [0, 0, -0.35], rifleMaterial);
+    addBox(rifle, [0.12, 0.29, 0.17], [0, -0.19, -0.26], strapMaterial, [0.12, 0, 0]);
+    addCylinder(rifle, 0.045, 0.045, 0.72, 10, [0, 0.01, -1.02], rifleMaterial, [Math.PI / 2, 0, 0]);
+    rifle.position.set(0.07, 1.32, -0.28);
+    rifle.rotation.set(-0.03, -0.05, -0.03);
+    group.add(rifle);
+
+    const muzzle = new THREE.Object3D();
+    muzzle.position.set(0, 0.01, -1.4);
+    rifle.add(muzzle);
+    const muzzleFlash = new THREE.Mesh(
+      new THREE.ConeGeometry(0.11, 0.34, 8, 1, true),
+      new THREE.MeshBasicMaterial({ color: 0xffc46b, transparent: true, opacity: 0, depthWrite: false })
+    );
+    muzzleFlash.position.set(0, 0.01, -1.48);
+    muzzleFlash.rotation.x = -Math.PI / 2;
+    rifle.add(muzzleFlash);
+
+    group.traverse((object) => {
+      if (object.isMesh) {
+        object.castShadow = true;
+        object.receiveShadow = true;
+      }
+    });
+    group.visible = false;
+    scene.add(group);
+    world.playerAvatar = {
+      group,
+      hips,
+      torso,
+      head,
+      leftLeg: leftLeg.pivot,
+      rightLeg: rightLeg.pivot,
+      leftArm: leftArm.pivot,
+      rightArm: rightArm.pivot,
+      rifle,
+      muzzle,
+      muzzleFlash
+    };
+  }
+
   const ITEMS = {
     rawFood: { name: 'Raw food', icon: '🥫', max: 5, use: 'EAT' },
     cookedFood: { name: 'Cooked meal', icon: '🍲', max: 4, use: 'EAT' },
@@ -822,7 +1057,6 @@
     wood: { name: 'Wood', icon: '🪵', max: 10 },
     scrap: { name: 'Scrap metal', icon: '🔩', max: 10 },
     cloth: { name: 'Cloth', icon: '🧵', max: 8 },
-    ammo: { name: 'Rifle rounds', icon: '▰', max: 60 },
     bandage: { name: 'Bandage', icon: '✚', max: 5, use: 'USE' },
     battery: { name: 'Battery', icon: '🔋', max: 4 }
   };
@@ -835,14 +1069,13 @@
     slots[2] = { type: 'wood', count: 2 };
     slots[3] = { type: 'scrap', count: 2 };
     slots[4] = { type: 'cloth', count: 2 };
-    slots[5] = { type: 'ammo', count: 48 };
-    slots[6] = { type: 'bandage', count: 1 };
+    slots[5] = { type: 'bandage', count: 1 };
     return slots;
   }
 
   function createState(seed) {
     return {
-      version: 2,
+      version: 3,
       seed,
       day: 1,
       time: CYCLE_SECONDS * 0.14,
@@ -863,6 +1096,9 @@
       },
       slots: createStartingSlots(),
       magazine: 30,
+      cameraMode: 'fpp',
+      rv: { x: 0, z: 0, yaw: 0 },
+      vehicle: { driving: false, speed: 0 },
       tvOn: false,
       flashlightOn: true,
       stats: { eliminations: 0, crates: 0, nights: 0 },
@@ -962,7 +1198,6 @@
   }
 
   const RECIPES = {
-    ammo: { name: '15 rifle rounds', result: ['ammo', 15], cost: { scrap: 2, wood: 1 } },
     bandage: { name: 'Bandage', result: ['bandage', 1], cost: { cloth: 2 } },
     battery: { name: 'Battery', result: ['battery', 1], cost: { scrap: 2, cloth: 1 } }
   };
@@ -1083,7 +1318,12 @@
       UI.interactionActions.appendChild(button);
     };
 
-    if (interactable.id === 'stove') {
+    if (interactable.id === 'driver') {
+      addAction('START RV · USE LEFT HALF TO DRIVE', () => {
+        closeInteraction();
+        toggleDriving(true);
+      });
+    } else if (interactable.id === 'stove') {
       addAction('COOK ONE HOT MEAL · 1 RAW FOOD + 1 WOOD', () => {
         if (countItem('rawFood') < 1 || countItem('wood') < 1) return;
         removeItem('rawFood', 1);
@@ -1152,6 +1392,8 @@
 
   function saveGame() {
     if (!gameStarted) return;
+    state.version = 3;
+    state.rv = { x: RV.x, z: RV.z, yaw: RV.yaw };
     state.openedCrates = world.crates.filter((crate) => crate.opened).map((crate) => crate.id);
     state.treeWood = {};
     for (const tree of world.trees) if (tree.wood < 3) state.treeWood[tree.id] = tree.wood;
@@ -1166,7 +1408,12 @@
   function loadSavedState() {
     try {
       const saved = JSON.parse(localStorage.getItem(SAVE_KEY));
-      if (!saved || saved.version !== 2 || !Array.isArray(saved.slots)) return null;
+      if (!saved || ![2, 3].includes(saved.version) || !Array.isArray(saved.slots)) return null;
+      saved.version = 3;
+      saved.cameraMode = saved.cameraMode === 'tpp' ? 'tpp' : 'fpp';
+      saved.rv = saved.rv || { x: 0, z: 0, yaw: 0 };
+      saved.vehicle = { driving: false, speed: 0 };
+      saved.slots = saved.slots.map((slot) => slot && slot.type === 'ammo' ? null : slot);
       return saved;
     } catch (error) {
       return null;
@@ -1174,6 +1421,10 @@
   }
 
   function applySavedWorld() {
+    RV.x = Number.isFinite(state.rv && state.rv.x) ? state.rv.x : 0;
+    RV.z = Number.isFinite(state.rv && state.rv.z) ? state.rv.z : 0;
+    RV.yaw = Number.isFinite(state.rv && state.rv.yaw) ? state.rv.yaw : 0;
+    syncRVTransform();
     const opened = new Set(state.openedCrates || []);
     for (const crate of world.crates) {
       if (opened.has(crate.id)) {
@@ -1191,43 +1442,85 @@
   }
 
   const enemyGeometry = {
-    head: new THREE.SphereGeometry(0.23, 10, 8),
-    torso: new THREE.BoxGeometry(0.48, 0.78, 0.3),
-    arm: new THREE.CylinderGeometry(0.075, 0.09, 0.66, 7),
-    leg: new THREE.CylinderGeometry(0.095, 0.11, 0.72, 7)
+    head: new THREE.SphereGeometry(0.235, 14, 11),
+    jaw: new THREE.BoxGeometry(0.29, 0.17, 0.25),
+    torso: new THREE.CylinderGeometry(0.23, 0.32, 0.8, 10),
+    pelvis: new THREE.BoxGeometry(0.46, 0.3, 0.3),
+    arm: new THREE.CylinderGeometry(0.068, 0.095, 0.76, 9),
+    leg: new THREE.CylinderGeometry(0.085, 0.115, 0.78, 9),
+    eyeSocket: new THREE.BoxGeometry(0.32, 0.09, 0.045),
+    mouth: new THREE.BoxGeometry(0.19, 0.035, 0.038)
   };
   const enemyMaterials = {
-    daySkin: new THREE.MeshStandardMaterial({ color: 0x65705c, roughness: 0.98 }),
-    nightSkin: new THREE.MeshStandardMaterial({ color: 0x4f5363, roughness: 0.98 }),
-    coat: new THREE.MeshStandardMaterial({ color: 0x3c453e, roughness: 1 }),
-    nightCoat: new THREE.MeshStandardMaterial({ color: 0x2e303b, roughness: 1 }),
-    eyes: new THREE.MeshBasicMaterial({ color: 0xff674a })
+    daySkin: [
+      new THREE.MeshStandardMaterial({ color: 0x7a8170, roughness: 0.96 }),
+      new THREE.MeshStandardMaterial({ color: 0x686f62, roughness: 0.98 }),
+      new THREE.MeshStandardMaterial({ color: 0x858272, roughness: 0.97 })
+    ],
+    nightSkin: [
+      new THREE.MeshStandardMaterial({ color: 0x555c66, roughness: 0.97 }),
+      new THREE.MeshStandardMaterial({ color: 0x4d545a, roughness: 0.99 }),
+      new THREE.MeshStandardMaterial({ color: 0x64636a, roughness: 0.98 })
+    ],
+    coat: [
+      new THREE.MeshStandardMaterial({ color: 0x343e39, roughness: 1 }),
+      new THREE.MeshStandardMaterial({ color: 0x3b3936, roughness: 1 }),
+      new THREE.MeshStandardMaterial({ color: 0x28363b, roughness: 0.98 })
+    ],
+    nightCoat: [
+      new THREE.MeshStandardMaterial({ color: 0x252a31, roughness: 1 }),
+      new THREE.MeshStandardMaterial({ color: 0x2b292d, roughness: 1 }),
+      new THREE.MeshStandardMaterial({ color: 0x222c31, roughness: 1 })
+    ],
+    trousers: new THREE.MeshStandardMaterial({ color: 0x242828, roughness: 1 }),
+    sockets: new THREE.MeshStandardMaterial({ color: 0x111516, roughness: 1 }),
+    mouth: new THREE.MeshBasicMaterial({ color: 0x171112 }),
+    eyes: new THREE.MeshStandardMaterial({ color: 0x8d3329, emissive: 0x8d271d, emissiveIntensity: 1.45, roughness: 0.48 })
   };
 
   function createEnemy(x, z, night = false) {
     const group = new THREE.Group();
-    const skin = night ? enemyMaterials.nightSkin : enemyMaterials.daySkin;
-    const coat = night ? enemyMaterials.nightCoat : enemyMaterials.coat;
+    const variant = Math.floor(Math.random() * 3);
+    const skin = (night ? enemyMaterials.nightSkin : enemyMaterials.daySkin)[variant];
+    const coat = (night ? enemyMaterials.nightCoat : enemyMaterials.coat)[variant];
     const torso = new THREE.Mesh(enemyGeometry.torso, coat);
-    torso.position.y = 1.15;
+    torso.position.y = 1.25;
+    torso.scale.set(1, 1, 0.68);
+    torso.rotation.x = 0.13;
+    const pelvis = new THREE.Mesh(enemyGeometry.pelvis, enemyMaterials.trousers);
+    pelvis.position.y = 0.82;
     const head = new THREE.Mesh(enemyGeometry.head, skin);
-    head.position.y = 1.78;
+    head.position.set(0, 1.81, -0.1);
+    head.scale.set(0.9, 1.12, 0.84);
+    head.rotation.x = 0.12;
+    const jaw = new THREE.Mesh(enemyGeometry.jaw, skin);
+    jaw.position.set(0.015, 1.67, -0.13);
+    jaw.rotation.x = -0.05;
     const leftArm = new THREE.Mesh(enemyGeometry.arm, skin);
     const rightArm = new THREE.Mesh(enemyGeometry.arm, skin);
-    leftArm.position.set(-0.33, 1.3, -0.08);
-    rightArm.position.set(0.33, 1.3, -0.08);
-    leftArm.rotation.x = rightArm.rotation.x = -1.12;
-    const leftLeg = new THREE.Mesh(enemyGeometry.leg, coat);
-    const rightLeg = new THREE.Mesh(enemyGeometry.leg, coat);
-    leftLeg.position.set(-0.13, 0.42, 0);
-    rightLeg.position.set(0.13, 0.42, 0);
-    const eyeLeft = new THREE.Mesh(new THREE.SphereGeometry(0.034, 6, 5), enemyMaterials.eyes);
+    leftArm.position.set(-0.34, 1.24, -0.12);
+    rightArm.position.set(0.34, 1.24, -0.12);
+    leftArm.rotation.x = rightArm.rotation.x = -1.08;
+    leftArm.rotation.z = -0.08;
+    rightArm.rotation.z = 0.08;
+    const leftLeg = new THREE.Mesh(enemyGeometry.leg, enemyMaterials.trousers);
+    const rightLeg = new THREE.Mesh(enemyGeometry.leg, enemyMaterials.trousers);
+    leftLeg.position.set(-0.135, 0.4, 0);
+    rightLeg.position.set(0.135, 0.4, 0);
+    const eyeSocket = new THREE.Mesh(enemyGeometry.eyeSocket, enemyMaterials.sockets);
+    eyeSocket.position.set(0, 1.85, -0.205);
+    const eyeLeft = new THREE.Mesh(new THREE.SphereGeometry(0.026, 7, 6), enemyMaterials.eyes);
     const eyeRight = eyeLeft.clone();
-    eyeLeft.position.set(-0.075, 1.82, -0.205);
-    eyeRight.position.set(0.075, 1.82, -0.205);
-    group.add(torso, head, leftArm, rightArm, leftLeg, rightLeg, eyeLeft, eyeRight);
+    eyeLeft.position.set(-0.078, 1.85, -0.233);
+    eyeRight.position.set(0.078, 1.85, -0.233);
+    const mouth = new THREE.Mesh(enemyGeometry.mouth, enemyMaterials.mouth);
+    mouth.position.set(0.012, 1.7, -0.266);
+    mouth.rotation.z = (Math.random() - 0.5) * 0.13;
+    group.add(torso, pelvis, head, jaw, leftArm, rightArm, leftLeg, rightLeg, eyeSocket, eyeLeft, eyeRight, mouth);
     group.position.set(x, 0, z);
     group.rotation.y = Math.random() * TAU;
+    const bodyScale = 0.92 + Math.random() * 0.14;
+    group.scale.set(bodyScale * (0.94 + Math.random() * 0.1), bodyScale, bodyScale);
     scene.add(group);
 
     const enemy = {
@@ -1238,6 +1531,8 @@
       group,
       head,
       torso,
+      pelvis,
+      jaw,
       leftArm,
       rightArm,
       leftLeg,
@@ -1252,12 +1547,15 @@
       dead: false,
       deadTimer: 0,
       phase: Math.random() * TAU,
+      lean: (Math.random() - 0.5) * 0.12,
+      headTurn: (Math.random() - 0.5) * 0.35,
       growlTimer: 4 + Math.random() * 10
     };
-    for (const object of [torso, head, leftArm, rightArm, leftLeg, rightLeg]) {
+    for (const object of [torso, pelvis, head, jaw, leftArm, rightArm, leftLeg, rightLeg]) {
       object.castShadow = true;
+      object.receiveShadow = true;
       object.userData.enemy = enemy;
-      object.userData.hitPart = object === head ? 'head' : 'body';
+      object.userData.hitPart = object === head || object === jaw ? 'head' : 'body';
       world.enemyHitMeshes.push(object);
     }
     world.enemies.push(enemy);
@@ -1355,12 +1653,20 @@
 
       enemy.phase += dt * (speed > enemy.speed * 0.5 ? 8.5 : 3.2);
       const swing = Math.sin(enemy.phase) * (speed > enemy.speed * 0.5 ? 0.65 : 0.24);
-      enemy.leftLeg.rotation.x = swing;
-      enemy.rightLeg.rotation.x = -swing;
-      enemy.leftArm.rotation.x = -1.05 - swing * 0.25;
-      enemy.rightArm.rotation.x = -1.05 + swing * 0.25;
-      enemy.group.position.set(enemy.x, Math.abs(Math.sin(enemy.phase)) * 0.025, enemy.z);
-      enemy.group.rotation.y = enemy.yaw;
+      const unevenStep = Math.sin(enemy.phase * 0.47 + enemy.headTurn) * 0.12;
+      enemy.leftLeg.rotation.x = swing * 0.92;
+      enemy.rightLeg.rotation.x = -swing * 0.76;
+      enemy.leftArm.rotation.x = -1.08 - swing * 0.2 + unevenStep;
+      enemy.rightArm.rotation.x = -1.03 + swing * 0.17 - unevenStep * 0.4;
+      enemy.torso.rotation.z = enemy.lean + Math.sin(enemy.phase * 0.5) * 0.035;
+      enemy.head.rotation.y = enemy.headTurn + Math.sin(enemy.phase * 0.32) * 0.16;
+      enemy.head.rotation.z = -enemy.lean * 0.45 + Math.sin(enemy.phase * 0.27) * 0.04;
+      enemy.jaw.rotation.x = -0.05 + Math.max(0, Math.sin(enemy.phase * 0.41)) * 0.07;
+      enemy.group.position.x = lerp(enemy.group.position.x, enemy.x, smooth(12, dt));
+      enemy.group.position.y = lerp(enemy.group.position.y, Math.abs(Math.sin(enemy.phase)) * 0.018, smooth(12, dt));
+      enemy.group.position.z = lerp(enemy.group.position.z, enemy.z, smooth(12, dt));
+      enemy.group.rotation.y = angleLerp(enemy.group.rotation.y, enemy.yaw, smooth(10, dt));
+      enemy.group.rotation.z = enemy.lean * 0.35;
 
       if (!player.inRV && distance < 11 && enemy.growlTimer <= 0) {
         enemy.growlTimer = 7 + Math.random() * 9;
@@ -1395,6 +1701,8 @@
 
   function recoverInsideRV() {
     state.player.inRV = true;
+    state.vehicle.driving = false;
+    state.vehicle.speed = 0;
     state.player.x = 0.1;
     state.player.z = 2.45;
     state.player.yaw = Math.PI / 2;
@@ -1402,6 +1710,9 @@
     state.player.health = 68;
     state.player.hunger = Math.max(24, state.player.hunger);
     state.player.thirst = Math.max(24, state.player.thirst);
+    motion.velocityX = 0;
+    motion.velocityZ = 0;
+    cameraRig.initialized = false;
     state.day += 1;
     state.time = CYCLE_SECONDS * 0.13;
     startNewDay();
@@ -1413,6 +1724,7 @@
   const raycaster = new THREE.Raycaster();
   const rayOrigin = new THREE.Vector3();
   const rayDirection = new THREE.Vector3();
+  const tracerStart = new THREE.Vector3();
   let tracer = null;
   let tracerTimer = 0;
 
@@ -1426,8 +1738,7 @@
     if (state.magazine <= 0) {
       weapon.fireCooldown = 0.3;
       audio.tone(280, 180, 0.05, 'square', 0.08);
-      if (countItem('ammo') > 0) startReload();
-      else toast('No ammunition. Search crates or craft rounds.', 'warn');
+      startReload();
       return;
     }
 
@@ -1437,6 +1748,7 @@
     state.player.pitch = clamp(state.player.pitch + 0.006 + Math.random() * 0.006, -1.25, 1.25);
     weapon.muzzle.material.opacity = 1;
     weapon.muzzleLight.intensity = 3.5;
+    if (state.cameraMode === 'tpp' && world.playerAvatar) world.playerAvatar.muzzleFlash.material.opacity = 1;
     document.body.classList.add('firing');
     setTimeout(() => document.body.classList.remove('firing'), 80);
     audio.shot();
@@ -1460,7 +1772,9 @@
       if (enemy.health <= 0) eliminateEnemy(enemy);
       break;
     }
-    showTracer(rayOrigin, hitPoint);
+    if (state.cameraMode === 'tpp' && world.playerAvatar) world.playerAvatar.muzzle.getWorldPosition(tracerStart);
+    else weapon.muzzle.getWorldPosition(tracerStart);
+    showTracer(tracerStart, hitPoint);
   }
 
   function applyAimAssist(origin, direction) {
@@ -1508,7 +1822,7 @@
   }
 
   function startReload() {
-    if (!gameStarted || paused || weapon.reloading || state.magazine >= 30 || countItem('ammo') <= 0) return;
+    if (!gameStarted || paused || weapon.reloading || state.magazine >= 30) return;
     weapon.reloading = true;
     weapon.reloadTimer = 1.42;
     audio.reload();
@@ -1516,12 +1830,7 @@
   }
 
   function finishReload() {
-    const needed = 30 - state.magazine;
-    const moved = Math.min(needed, countItem('ammo'));
-    if (moved > 0) {
-      removeItem('ammo', moved);
-      state.magazine += moved;
-    }
+    state.magazine = 30;
     weapon.reloading = false;
     weapon.reloadTimer = 0;
   }
@@ -1551,11 +1860,10 @@
       if (Math.random() < 0.35) addItem('battery', 1);
     } else {
       const roll = Math.random();
-      if (roll < 0.24) addItem('ammo', 10 + Math.floor(Math.random() * 9));
-      else if (roll < 0.46) addItem('scrap', 2 + Math.floor(Math.random() * 2));
-      else if (roll < 0.63) addItem('cloth', 2);
-      else if (roll < 0.79) addItem('bandage', 1);
-      else if (roll < 0.91) addItem('water', 1);
+      if (roll < 0.32) addItem('scrap', 2 + Math.floor(Math.random() * 2));
+      else if (roll < 0.54) addItem('cloth', 2);
+      else if (roll < 0.72) addItem('bandage', 1);
+      else if (roll < 0.88) addItem('water', 1);
       else addItem('rawFood', 1);
       if (Math.random() < 0.42) addItem('wood', 1);
     }
@@ -1587,6 +1895,7 @@
 
   function findInteractable() {
     const player = state.player;
+    if (state.vehicle && state.vehicle.driving) return null;
     let best = null;
     let bestScore = Infinity;
     if (player.inRV) {
@@ -1654,9 +1963,17 @@
     return interiorBlockers.some((box) => x > box.minX - radius && x < box.maxX + radius && z > box.minZ - radius && z < box.maxZ + radius);
   }
 
-  function isOutsideBlocked(x, z, radius = 0.34) {
+  function isOutsideBlocked(x, z, radius = 0.34, ignoreRV = false) {
     if (Math.abs(x) > WORLD_SIZE || Math.abs(z) > WORLD_SIZE) return true;
-    if (x > -RV.width / 2 - radius && x < RV.width / 2 + radius && z > -RV.length / 2 - radius && z < RV.length / 2 + 0.95 + radius) return true;
+    if (!ignoreRV) {
+      const local = worldToRVLocal(x, z);
+      if (
+        local.x > -RV.width / 2 - radius &&
+        local.x < RV.width / 2 + radius &&
+        local.z > -RV.length / 2 - radius &&
+        local.z < RV.length / 2 + 0.95 + radius
+      ) return true;
+    }
     for (const collider of nearbyColliders(x, z)) {
       if (!collider.active) continue;
       const dx = x - collider.x;
@@ -1667,14 +1984,115 @@
     return false;
   }
 
+  function isRVPositionBlocked(x, z, yaw) {
+    if (Math.abs(x) > WORLD_SIZE - 5 || Math.abs(z) > WORLD_SIZE - 5) return true;
+    const cosine = Math.cos(yaw);
+    const sine = Math.sin(yaw);
+    for (const localZ of [-3.65, -1.85, 0, 1.85, 3.65]) {
+      const sampleX = x + sine * localZ;
+      const sampleZ = z + cosine * localZ;
+      for (const collider of nearbyColliders(sampleX, sampleZ)) {
+        if (!collider.active) continue;
+        const dx = sampleX - collider.x;
+        const dz = sampleZ - collider.z;
+        const clearance = 1.48 + collider.r;
+        if (dx * dx + dz * dz < clearance * clearance) return true;
+      }
+    }
+    return false;
+  }
+
   function movePlayer(dx, dz) {
     const player = state.player;
     const blocked = player.inRV ? isInsideBlocked : isOutsideBlocked;
     const radius = player.inRV ? 0.22 : 0.34;
+    const beforeX = player.x;
+    const beforeZ = player.z;
     const nextX = player.x + dx;
     if (!blocked(nextX, player.z, radius)) player.x = nextX;
     const nextZ = player.z + dz;
     if (!blocked(player.x, nextZ, radius)) player.z = nextZ;
+    return { movedX: player.x - beforeX, movedZ: player.z - beforeZ };
+  }
+
+  let vehicleImpactCooldown = 0;
+  function toggleDriving(forceStart = null) {
+    if (!gameStarted || paused) return;
+    if (!state.player.inRV) {
+      toast('Enter the RV before using the driver seat.', 'warn');
+      return;
+    }
+    const start = forceStart === null ? !state.vehicle.driving : Boolean(forceStart);
+    if (start === state.vehicle.driving) return;
+    state.vehicle.driving = start;
+    state.vehicle.speed = 0;
+    state.player.x = -0.62;
+    state.player.z = 3.1;
+    state.player.yaw = Math.PI;
+    state.player.pitch = 0;
+    motion.velocityX = 0;
+    motion.velocityZ = 0;
+    cameraRig.initialized = false;
+    audio.switch();
+    updateRVState();
+    saveGame();
+    toast(start ? `RV started · ${state.cameraMode.toUpperCase()} driving view.` : 'RV parked. You can walk through the interior.', 'good');
+  }
+
+  function toggleCameraMode() {
+    if (!gameStarted || paused) return;
+    state.cameraMode = state.cameraMode === 'tpp' ? 'fpp' : 'tpp';
+    cameraRig.initialized = false;
+    updateRVState();
+    toast(`${state.cameraMode.toUpperCase()} camera active${state.vehicle.driving ? ' while driving' : ''}.`, 'good');
+  }
+
+  function updateVehicle(dt) {
+    if (!state.vehicle.driving) {
+      state.vehicle.speed = lerp(state.vehicle.speed || 0, 0, smooth(5, dt));
+      return;
+    }
+    let throttle = 0;
+    let steering = 0;
+    if (input.keys.KeyW || input.keys.ArrowUp) throttle += 1;
+    if (input.keys.KeyS || input.keys.ArrowDown) throttle -= 1;
+    if (input.keys.KeyD) steering += 1;
+    if (input.keys.KeyA) steering -= 1;
+    throttle += -input.stickY;
+    steering += input.stickX;
+    throttle = clamp(throttle, -1, 1);
+    steering = clamp(steering, -1, 1);
+
+    const targetSpeed = throttle >= 0 ? throttle * 10.8 : throttle * 4.6;
+    const response = Math.abs(targetSpeed) > Math.abs(state.vehicle.speed) ? 2.9 : 4.8;
+    state.vehicle.speed = lerp(state.vehicle.speed, targetSpeed, smooth(response, dt));
+    if (Math.abs(throttle) < 0.04) state.vehicle.speed *= Math.exp(-dt * 1.8);
+    if (Math.abs(state.vehicle.speed) < 0.025) state.vehicle.speed = 0;
+
+    const speedRatio = clamp(Math.abs(state.vehicle.speed) / 8.5, 0, 1);
+    const direction = state.vehicle.speed >= 0 ? 1 : -1;
+    const proposedYaw = RV.yaw + steering * direction * (0.32 + speedRatio * 0.46) * dt;
+    const proposedX = RV.x + Math.sin(proposedYaw) * state.vehicle.speed * dt;
+    const proposedZ = RV.z + Math.cos(proposedYaw) * state.vehicle.speed * dt;
+    if (!isRVPositionBlocked(proposedX, proposedZ, proposedYaw)) {
+      RV.x = proposedX;
+      RV.z = proposedZ;
+      RV.yaw = proposedYaw;
+      syncRVTransform();
+    } else {
+      state.vehicle.speed *= -0.12;
+      if (vehicleImpactCooldown <= 0) {
+        vehicleImpactCooldown = 1.2;
+        audio.hit();
+        if (navigator.vibrate) navigator.vibrate(28);
+        toast('RV blocked by terrain. Steer around it.', 'warn');
+      }
+    }
+    vehicleImpactCooldown = Math.max(0, vehicleImpactCooldown - dt);
+    for (const wheel of world.rvWheels) wheel.rotation.x += state.vehicle.speed * dt / 0.55;
+    state.player.x = -0.62;
+    state.player.z = 3.1;
+    state.player.stamina = 100;
   }
 
   function enterRV() {
@@ -1689,6 +2107,11 @@
     state.player.z = 1.55;
     state.player.yaw = Math.PI / 2;
     state.player.pitch = 0;
+    state.vehicle.driving = false;
+    state.vehicle.speed = 0;
+    motion.velocityX = 0;
+    motion.velocityZ = 0;
+    cameraRig.initialized = false;
     for (const enemy of world.enemies) enemy.alert = 0;
     audio.door();
     audio.lock();
@@ -1699,11 +2122,19 @@
 
   function exitRV() {
     if (!state.player.inRV) return;
+    if (state.vehicle.driving) {
+      toast('Park the RV before going outside.', 'warn');
+      return;
+    }
     state.player.inRV = false;
-    state.player.x = RV.doorX + 0.78;
-    state.player.z = RV.doorZ;
-    state.player.yaw = Math.PI / 2;
+    const exitPoint = rvLocalToWorld(RV.localDoorX + 0.92, RV.localDoorZ);
+    state.player.x = exitPoint.x;
+    state.player.z = exitPoint.z;
+    state.player.yaw = RV.yaw + Math.PI / 2;
     state.player.pitch = 0;
+    motion.velocityX = 0;
+    motion.velocityZ = 0;
+    cameraRig.initialized = false;
     audio.door();
     updateRVState();
     toast(isNight() ? 'Outside during the long night. Stay close to the RV.' : 'Outside. Collect supplies before the light fades.', 'warn');
@@ -1721,9 +2152,15 @@
     UI.zoneText.textContent = safe ? 'RV SAFE ZONE · INVULNERABLE' : 'OUTSIDE · EXPOSED';
     UI.rvButton.textContent = safe ? 'OUTSIDE' : 'INSIDE';
     UI.rvButton.setAttribute('aria-label', safe ? 'Go outside' : 'Enter RV');
+    UI.driveButton.textContent = state.vehicle.driving ? 'PARK' : 'DRIVE';
+    UI.driveButton.style.opacity = safe ? '1' : '0.45';
+    UI.cameraButton.innerHTML = `CAM<br>${state.cameraMode.toUpperCase()}`;
+    UI.vehicleHud.classList.toggle('driving', state.vehicle.driving);
+    UI.vehicleMode.textContent = state.vehicle.driving ? `${state.cameraMode.toUpperCase()} · RV DRIVE` : 'RV PARKED';
     world.rvLockLight.material.color.setHex(safe ? 0x69d395 : 0xe0a255);
     world.rvLockLight.material.emissive.setHex(safe ? 0x2e9c5d : 0xa45b20);
     flashlight.intensity = safe ? 0 : (state.flashlightOn ? 2.5 : 0);
+    if (world.rvHeadlight) world.rvHeadlight.intensity = state.vehicle.driving ? (isNight() ? 2.3 : 1.1) : 0;
   }
 
   function isNight() {
@@ -1802,14 +2239,138 @@
     stickX: 0,
     stickY: 0,
     stickPointer: null,
+    stickOriginX: 0,
+    stickOriginY: 0,
     lookPointer: null,
     lookLastX: 0,
     lookLastY: 0,
     fireHeld: false
   };
 
+  const motion = {
+    velocityX: 0,
+    velocityZ: 0,
+    speed: 0,
+    avatarYaw: 0
+  };
+  const cameraRig = {
+    initialized: false,
+    position: new THREE.Vector3()
+  };
+  const playerWorldPosition = new THREE.Vector3();
+  const cameraLookTarget = new THREE.Vector3();
+  const cameraDesired = new THREE.Vector3();
+  const cameraResolved = new THREE.Vector3();
+  const cameraForward = new THREE.Vector3();
+  const cameraCandidate = new THREE.Vector3();
+  const cameraLocal = { x: 0, z: 0 };
+
+  function getPlayerWorldPosition(target = new THREE.Vector3()) {
+    const player = state.player;
+    if (player.inRV) {
+      rvLocalToWorld(player.x, player.z, target);
+      target.y = player.y;
+    } else {
+      target.set(player.x, player.y, player.z);
+    }
+    return target;
+  }
+
+  function getWorldViewYaw() {
+    return state.player.yaw + (state.player.inRV ? RV.yaw : 0);
+  }
+
+  function resolveThirdPersonCamera(target, desired, ignoreRV = false) {
+    cameraResolved.copy(target);
+    for (let step = 12; step >= 2; step -= 1) {
+      const amount = step / 12;
+      cameraCandidate.lerpVectors(target, desired, amount);
+      let blocked;
+      if (state.player.inRV && !state.vehicle.driving) {
+        worldToRVLocal(cameraCandidate.x, cameraCandidate.z, cameraLocal);
+        blocked = isInsideBlocked(cameraLocal.x, cameraLocal.z, 0.12);
+      } else {
+        blocked = isOutsideBlocked(cameraCandidate.x, cameraCandidate.z, 0.12, ignoreRV);
+      }
+      if (!blocked && cameraCandidate.y > 0.42) {
+        cameraResolved.copy(cameraCandidate);
+        break;
+      }
+    }
+    return cameraResolved;
+  }
+
+  function updateCameraAndAvatar(dt, bobX, bobY, movingAmount) {
+    const player = state.player;
+    const viewYaw = getWorldViewYaw();
+    const viewPitch = player.pitch;
+    getPlayerWorldPosition(playerWorldPosition);
+    const driving = state.vehicle.driving;
+    const thirdPerson = state.cameraMode === 'tpp';
+
+    if (thirdPerson) {
+      if (driving) {
+        rvLocalToWorld(0, 0.45, cameraLookTarget);
+        cameraLookTarget.y = 2.15;
+      } else {
+        cameraLookTarget.copy(playerWorldPosition);
+        cameraLookTarget.y += 0.02;
+      }
+      const cosinePitch = Math.cos(viewPitch);
+      cameraForward.set(
+        -Math.sin(viewYaw) * cosinePitch,
+        Math.sin(viewPitch),
+        -Math.cos(viewYaw) * cosinePitch
+      ).normalize();
+      const distance = driving ? 10.5 : (player.inRV ? 2.45 : 4.7);
+      cameraDesired.copy(cameraLookTarget).addScaledVector(cameraForward, -distance);
+      if (driving) cameraDesired.y += 1.45;
+      resolveThirdPersonCamera(cameraLookTarget, cameraDesired, driving);
+    } else {
+      cameraResolved.copy(playerWorldPosition);
+      cameraResolved.y += bobY;
+    }
+
+    const cameraRate = thirdPerson ? (driving ? 6.2 : 10.5) : 24;
+    if (!cameraRig.initialized) {
+      cameraRig.position.copy(cameraResolved);
+      camera.position.copy(cameraResolved);
+      cameraRig.initialized = true;
+    } else {
+      cameraRig.position.lerp(cameraResolved, smooth(cameraRate, dt));
+      camera.position.copy(cameraRig.position);
+    }
+    camera.rotation.set(viewPitch, viewYaw, 0, 'YXZ');
+
+    weapon.group.visible = !thirdPerson && !driving;
+    if (world.playerAvatar) {
+      const avatar = world.playerAvatar;
+      const avatarVisible = thirdPerson && !driving;
+      if (avatarVisible && !avatar.group.visible) {
+        avatar.group.position.set(playerWorldPosition.x, player.inRV ? 0.48 : 0, playerWorldPosition.z);
+        avatar.group.rotation.y = viewYaw;
+      }
+      avatar.group.visible = avatarVisible;
+      if (avatarVisible) {
+        avatar.group.position.x = lerp(avatar.group.position.x, playerWorldPosition.x, smooth(16, dt));
+        avatar.group.position.y = lerp(avatar.group.position.y, player.inRV ? 0.48 : 0, smooth(16, dt));
+        avatar.group.position.z = lerp(avatar.group.position.z, playerWorldPosition.z, smooth(16, dt));
+        motion.avatarYaw = angleLerp(motion.avatarYaw, viewYaw, smooth(14, dt));
+        avatar.group.rotation.y = motion.avatarYaw;
+        const stride = Math.sin(weapon.bob) * Math.min(0.72, motion.speed * 0.13) * movingAmount;
+        avatar.leftLeg.rotation.x = stride;
+        avatar.rightLeg.rotation.x = -stride;
+        avatar.leftArm.rotation.x = -1.08 - stride * 0.08;
+        avatar.rightArm.rotation.x = -1.02 + stride * 0.08;
+        avatar.torso.rotation.z = Math.sin(weapon.bob * 0.5) * 0.018 * movingAmount;
+      }
+      avatar.muzzleFlash.material.opacity = Math.max(0, avatar.muzzleFlash.material.opacity - dt * 22);
+    }
+  }
+
   function updatePlayer(dt) {
     const player = state.player;
+    updateVehicle(dt);
     let side = 0;
     let forward = 0;
     if (input.keys.KeyW || input.keys.ArrowUp) forward += 1;
@@ -1819,31 +2380,41 @@
     side += input.stickX;
     forward += -input.stickY;
     const length = Math.hypot(side, forward);
-    const sprintRequested = !player.inRV && (input.keys.ShiftLeft || input.keys.ShiftRight || length > 1.08) && player.stamina > 4;
+    const sprintRequested = !player.inRV && (input.keys.ShiftLeft || input.keys.ShiftRight || length > 0.94) && player.stamina > 4;
     let speed = player.inRV ? 2.15 : sprintRequested ? 6.2 : 4.05;
     if (isNight() && !player.inRV) speed *= 0.96;
 
-    if (length > 0.06) {
+    if (!state.vehicle.driving && length > 0.06) {
       side /= Math.max(1, length);
       forward /= Math.max(1, length);
       const forwardX = -Math.sin(player.yaw);
       const forwardZ = -Math.cos(player.yaw);
       const rightX = Math.cos(player.yaw);
       const rightZ = -Math.sin(player.yaw);
-      movePlayer((forwardX * forward + rightX * side) * speed * dt, (forwardZ * forward + rightZ * side) * speed * dt);
-      weapon.bob += dt * (sprintRequested ? 11.5 : player.inRV ? 6.2 : 8.2);
+      const targetVelocityX = (forwardX * forward + rightX * side) * speed;
+      const targetVelocityZ = (forwardZ * forward + rightZ * side) * speed;
+      motion.velocityX = lerp(motion.velocityX, targetVelocityX, smooth(sprintRequested ? 8.5 : 11.5, dt));
+      motion.velocityZ = lerp(motion.velocityZ, targetVelocityZ, smooth(sprintRequested ? 8.5 : 11.5, dt));
+      const moved = movePlayer(motion.velocityX * dt, motion.velocityZ * dt);
+      if (Math.abs(moved.movedX) < Math.abs(motion.velocityX * dt) * 0.15) motion.velocityX *= 0.18;
+      if (Math.abs(moved.movedZ) < Math.abs(motion.velocityZ * dt) * 0.15) motion.velocityZ *= 0.18;
+      motion.speed = Math.hypot(motion.velocityX, motion.velocityZ);
+      weapon.bob += dt * (sprintRequested ? 10.8 : player.inRV ? 5.8 : 7.5) * clamp(motion.speed / Math.max(0.1, speed), 0.35, 1);
       if (sprintRequested) player.stamina = Math.max(0, player.stamina - dt * 19);
     } else {
+      motion.velocityX *= Math.exp(-dt * 10);
+      motion.velocityZ *= Math.exp(-dt * 10);
+      motion.speed = Math.hypot(motion.velocityX, motion.velocityZ);
       weapon.bob += dt * 1.5;
       player.stamina = Math.min(100, player.stamina + dt * 15);
     }
     if (!sprintRequested) player.stamina = Math.min(100, player.stamina + dt * 8);
 
-    const movingAmount = length > 0.06 ? 1 : 0;
-    const bobY = reducedMotion ? 0 : Math.abs(Math.sin(weapon.bob)) * 0.035 * movingAmount;
-    const bobX = reducedMotion ? 0 : Math.sin(weapon.bob * 0.5) * 0.022 * movingAmount;
-    camera.position.set(player.x, player.y + bobY, player.z);
-    camera.rotation.set(player.pitch, player.yaw, 0, 'YXZ');
+    const movingAmount = !state.vehicle.driving && motion.speed > 0.12 ? 1 : 0;
+    const driveVibration = state.vehicle.driving && !reducedMotion ? Math.sin(elapsed * 18) * Math.min(0.012, Math.abs(state.vehicle.speed) * 0.0012) : 0;
+    const bobY = reducedMotion ? 0 : Math.abs(Math.sin(weapon.bob)) * 0.024 * movingAmount + driveVibration;
+    const bobX = reducedMotion ? 0 : Math.sin(weapon.bob * 0.5) * 0.016 * movingAmount;
+    updateCameraAndAvatar(dt, bobX, bobY, movingAmount);
 
     weapon.kick = Math.max(0, weapon.kick - dt * 7.5);
     const targetX = (player.inRV ? 0.37 : 0.4) + bobX + weapon.swayX;
@@ -1906,6 +2477,7 @@
     world.moon.material.opacity = nightAmount * 0.86;
     for (const lightObject of world.interiorLights) lightObject.intensity = state.player.inRV ? 1.25 : 0.16;
     flashlight.intensity = state.player.inRV ? 0 : (state.flashlightOn ? 1.65 + nightAmount * 1.25 : 0);
+    if (world.rvHeadlight) world.rvHeadlight.intensity = state.vehicle.driving ? 1.05 + nightAmount * 1.7 : 0;
 
     const followX = state.player.inRV ? RV.x : state.player.x;
     const followZ = state.player.inRV ? RV.z : state.player.z;
@@ -1952,6 +2524,107 @@
     }
   }
 
+  function drawMinimap() {
+    const context = minimapContext;
+    const width = UI.minimap.width;
+    const height = UI.minimap.height;
+    const centerX = width / 2;
+    const centerY = height / 2;
+    const range = 60;
+    const scale = width / (range * 2);
+    const originX = state.player.inRV ? RV.x : state.player.x;
+    const originZ = state.player.inRV ? RV.z : state.player.z;
+    const toMap = (x, z) => ({
+      x: centerX + (x - originX) * scale,
+      y: centerY + (z - originZ) * scale
+    });
+
+    context.clearRect(0, 0, width, height);
+    const gradient = context.createRadialGradient(centerX, centerY, 5, centerX, centerY, width * 0.72);
+    gradient.addColorStop(0, 'rgba(30,48,42,.95)');
+    gradient.addColorStop(1, 'rgba(5,11,13,.98)');
+    context.fillStyle = gradient;
+    context.fillRect(0, 0, width, height);
+
+    context.strokeStyle = 'rgba(189,211,198,.11)';
+    context.lineWidth = 1;
+    for (const radius of [15, 30, 45, 60]) {
+      context.beginPath();
+      context.arc(centerX, centerY, radius * scale, 0, TAU);
+      context.stroke();
+    }
+    context.beginPath();
+    context.moveTo(centerX, 0);
+    context.lineTo(centerX, height);
+    context.moveTo(0, centerY);
+    context.lineTo(width, centerY);
+    context.stroke();
+
+    context.fillStyle = 'rgba(214,224,216,.22)';
+    for (const cabin of world.cabins) {
+      if (Math.hypot(cabin.x - originX, cabin.z - originZ) > range + 6) continue;
+      const point = toMap(cabin.x, cabin.z);
+      context.save();
+      context.translate(point.x, point.y);
+      context.rotate(-cabin.yaw);
+      context.fillRect(-4.5, -3.7, 9, 7.4);
+      context.restore();
+    }
+
+    context.fillStyle = '#d9ad63';
+    for (const crate of world.crates) {
+      if (crate.opened || Math.hypot(crate.x - originX, crate.z - originZ) > range) continue;
+      const point = toMap(crate.x, crate.z);
+      context.fillRect(point.x - 1.5, point.y - 1.5, 3, 3);
+    }
+
+    for (const enemy of world.enemies) {
+      if (enemy.dead || !enemy.group.visible) continue;
+      const distance = Math.hypot(enemy.x - originX, enemy.z - originZ);
+      if (distance > range) continue;
+      const point = toMap(enemy.x, enemy.z);
+      context.fillStyle = distance < 16 ? '#ef6654' : 'rgba(221,91,75,.72)';
+      context.beginPath();
+      context.arc(point.x, point.y, distance < 16 ? 2.5 : 1.8, 0, TAU);
+      context.fill();
+    }
+
+    const rvPoint = toMap(RV.x, RV.z);
+    context.save();
+    context.translate(rvPoint.x, rvPoint.y);
+    context.rotate(-RV.yaw);
+    context.fillStyle = state.player.inRV ? '#83d3a4' : '#d3ddd6';
+    context.fillRect(-3.2, -6.5, 6.4, 13);
+    context.fillStyle = '#f0b45f';
+    context.beginPath();
+    context.moveTo(0, 8.5);
+    context.lineTo(-3.2, 5.8);
+    context.lineTo(3.2, 5.8);
+    context.closePath();
+    context.fill();
+    context.restore();
+
+    const playerPoint = state.player.inRV ? { x: centerX, y: centerY } : toMap(state.player.x, state.player.z);
+    context.save();
+    context.translate(playerPoint.x, playerPoint.y);
+    context.rotate(-getWorldViewYaw());
+    context.fillStyle = '#74b8dd';
+    context.beginPath();
+    context.moveTo(0, -6);
+    context.lineTo(-4.2, 4.5);
+    context.lineTo(0, 2.8);
+    context.lineTo(4.2, 4.5);
+    context.closePath();
+    context.fill();
+    context.restore();
+
+    context.fillStyle = 'rgba(245,247,242,.82)';
+    context.font = 'bold 10px monospace';
+    context.fillText('N', centerX - 3, 12);
+    context.strokeStyle = 'rgba(216,231,222,.34)';
+    context.strokeRect(0.5, 0.5, width - 1, height - 1);
+  }
+
   function updateHUD() {
     const setVital = (fill, number, value) => {
       const rounded = Math.round(clamp(value, 0, 100));
@@ -1969,11 +2642,15 @@
     UI.time.textContent = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
     UI.weather.textContent = `${state.weather.toUpperCase()}${isNight() ? ' · LONG NIGHT' : ' · DIM DAY'}`;
     UI.mag.textContent = weapon.reloading ? '··' : state.magazine;
-    UI.reserve.textContent = ` / ${countItem('ammo')}`;
+    UI.reserve.textContent = ' / ∞';
     UI.packCount.textContent = `${occupiedSlots()} / ${SLOT_COUNT}`;
+    UI.speed.textContent = String(Math.round(Math.abs(state.vehicle.speed || 0) * 3.6));
+    UI.vehicleMode.textContent = state.vehicle.driving ? `${state.cameraMode.toUpperCase()} · RV DRIVE` : 'RV PARKED';
 
-    if (state.player.inRV) {
-      UI.objective.textContent = isNight() ? 'Doors locked. Cook, watch TV, organize supplies, or sleep safely until morning.' : 'Prepare inside the RV, then collect food, water, wood, and ammunition.';
+    if (state.vehicle.driving) {
+      UI.objective.textContent = 'Drive with the full left control zone. Swipe right to look and tap CAM to switch FPP or TPP.';
+    } else if (state.player.inRV) {
+      UI.objective.textContent = isNight() ? 'Doors locked. Cook, watch TV, organize supplies, drive, or sleep safely until morning.' : 'Prepare or drive the RV, then collect food, water, wood, and medicine.';
     } else if (isNight()) {
       UI.objective.textContent = 'The long night is active. Reach the RV and tap INSIDE for instant safety.';
     } else {
@@ -1981,7 +2658,7 @@
     }
 
     const directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
-    const heading = ((-state.player.yaw * 180 / Math.PI) % 360 + 360) % 360;
+    const heading = ((-getWorldViewYaw() * 180 / Math.PI) % 360 + 360) % 360;
     const index = Math.round(heading / 45) % 8;
     UI.compass.textContent = `${directions[(index + 7) % 8]}   ${directions[index]}   ${directions[(index + 1) % 8]}`;
     updatePrompt();
@@ -1994,6 +2671,11 @@
     updateEnemies(dt);
     updateAtmosphere(dt);
     updateHUD();
+    minimapTimer -= dt;
+    if (minimapTimer <= 0) {
+      minimapTimer = 0.1;
+      drawMinimap();
+    }
     saveTimer += dt;
     if (saveTimer > 20) {
       saveTimer = 0;
@@ -2016,21 +2698,32 @@
   function startGame(saved) {
     if (gameStarted) return;
     state = saved || createState((Math.random() * 0xffffffff) >>> 0);
+    state.cameraMode = state.cameraMode === 'tpp' ? 'tpp' : 'fpp';
+    state.rv = state.rv || { x: 0, z: 0, yaw: 0 };
+    state.vehicle = state.vehicle || { driving: false, speed: 0 };
+    state.vehicle.driving = false;
+    state.vehicle.speed = 0;
     buildEnvironment(state.seed);
     applySavedWorld();
     gameStarted = true;
     paused = false;
     state.player.inRV = Boolean(state.player.inRV);
     if (!state.player.inRV && isOutsideBlocked(state.player.x, state.player.z, 0.34)) {
-      state.player.x = RV.doorX + 0.8;
-      state.player.z = RV.doorZ;
+      const safeStart = rvLocalToWorld(RV.localDoorX + 0.92, RV.localDoorZ);
+      state.player.x = safeStart.x;
+      state.player.z = safeStart.z;
     }
     updateRVState();
-    camera.position.set(state.player.x, state.player.y, state.player.z);
-    camera.rotation.set(state.player.pitch, state.player.yaw, 0, 'YXZ');
+    getPlayerWorldPosition(playerWorldPosition);
+    camera.position.copy(playerWorldPosition);
+    camera.rotation.set(state.player.pitch, getWorldViewYaw(), 0, 'YXZ');
+    cameraRig.position.copy(camera.position);
+    cameraRig.initialized = true;
+    motion.avatarYaw = getWorldViewYaw();
     UI.start.classList.add('hidden');
     ensureEnemyPopulation(true);
     updateHUD();
+    drawMinimap();
     requestImmersiveMode();
     audio.unlock();
     toast(state.player.inRV ? 'You begin inside the locked RV. Nothing can harm you here.' : 'Continue collecting supplies. The RV remains your safe zone.', 'good');
@@ -2046,16 +2739,14 @@
   }
 
   const stick = $('si-stick');
+  const stickBase = $('si-stick-base');
   const knob = $('si-knob');
   const lookZone = $('si-look-zone');
 
   function updateStick(event) {
-    const rect = stick.getBoundingClientRect();
-    const centerX = rect.left + rect.width / 2;
-    const centerY = rect.top + rect.height / 2;
-    let dx = event.clientX - centerX;
-    let dy = event.clientY - centerY;
-    const limit = rect.width * 0.34;
+    let dx = event.clientX - input.stickOriginX;
+    let dy = event.clientY - input.stickOriginY;
+    const limit = Math.max(44, stickBase.getBoundingClientRect().width * 0.39);
     const distance = Math.hypot(dx, dy);
     if (distance > limit) {
       dx = dx / distance * limit;
@@ -2070,6 +2761,12 @@
     if (!gameStarted || paused) return;
     event.preventDefault();
     input.stickPointer = event.pointerId;
+    input.stickOriginX = event.clientX;
+    input.stickOriginY = event.clientY;
+    const rect = stick.getBoundingClientRect();
+    stickBase.style.left = `${event.clientX - rect.left}px`;
+    stickBase.style.top = `${event.clientY - rect.top}px`;
+    stick.classList.add('active');
     stick.setPointerCapture(event.pointerId);
     updateStick(event);
     audio.unlock();
@@ -2082,6 +2779,7 @@
     input.stickPointer = null;
     input.stickX = 0;
     input.stickY = 0;
+    stick.classList.remove('active');
     knob.style.transform = '';
   };
   stick.addEventListener('pointerup', releaseStick);
@@ -2135,6 +2833,8 @@
   bindHoldButton(UI.useButton, useCurrentInteractable, null);
   bindHoldButton(UI.reloadButton, startReload, null);
   bindHoldButton(UI.rvButton, toggleRV, null);
+  bindHoldButton(UI.driveButton, () => toggleDriving(), null);
+  bindHoldButton(UI.cameraButton, toggleCameraMode, null);
   bindHoldButton(UI.packButton, openInventory, null);
 
   addEventListener('keydown', (event) => {
@@ -2144,6 +2844,8 @@
       else if (event.code === 'KeyB') modalOpen ? closeModal() : openInventory();
       else if (event.code === 'KeyR') startReload();
       else if (event.code === 'KeyV') toggleRV();
+      else if (event.code === 'KeyG') toggleDriving();
+      else if (event.code === 'KeyC') toggleCameraMode();
       else if (event.code === 'KeyF' && gameStarted) {
         state.flashlightOn = !state.flashlightOn;
         updateRVState();
@@ -2166,6 +2868,7 @@
     input.fireHeld = false;
     input.stickX = 0;
     input.stickY = 0;
+    stick.classList.remove('active');
     knob.style.transform = '';
   });
 

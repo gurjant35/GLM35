@@ -5,9 +5,10 @@ folder with any static web host.
 
 ## Safe Inside
 
-A playable first-person 3D survival game based on `GAME_DESIGN.md`. The RV is a
-fully walkable safe zone. Tapping INSIDE near its door moves the player inside
-immediately, locks the doors, and prevents all enemy damage.
+A playable first and third-person 3D survival game based on `GAME_DESIGN.md`.
+The RV is both driveable and a fully walkable safe zone. Tapping INSIDE near
+its door moves the player inside immediately, locks the doors, and prevents all
+enemy damage.
 
 **Play it:** open `safe-inside.html` in Chrome or serve this folder from a
 static host. Android landscape mode is the primary target. The OnePlus 12 uses
@@ -16,14 +17,19 @@ rate. Desktop controls are also supported.
 
 The game includes:
 
-- True first-person camera, touch look, movement joystick, visible carbine and hands
-- Landscape Android HUD with FIRE, USE, RELOAD, PACK, INSIDE, and OUTSIDE controls
+- Switchable FPP and TPP cameras on foot and while driving the RV
+- Floating movement control that works from anywhere across the entire left half of the screen
+- Landscape Android HUD with FIRE, USE, RELOAD, PACK, DRIVE, CAMERA, INSIDE, and OUTSIDE controls
+- Top-right local minimap with the RV, nearby supplies, buildings, enemies, and player heading
+- Smooth acceleration, deceleration, camera following, character animation, and RV steering
 - Detailed RV kitchen, fridge, television, bedroom, washroom, shower, and storage
 - Instant RV safety, automatic door locking, safe cooking, resting, sleeping, and saving
-- Twenty-slot backpack, consumable food and water, materials, ammunition, and crafting
-- Dense procedural forest, cabins, supply crates, harvestable trees, rocks, rain, fog, lightning, stars, and moonlight
+- Twenty-slot backpack, consumable food and water, materials, medicine, and crafting
+- Unlimited rifle reserve with magazine reloads and mobile aim assistance
+- Dense procedural forest, ground detail, undergrowth, cabins, supply crates, harvestable trees, rocks, rain, fog, lightning, stars, and moonlight
 - Short dim daytime and a longer, darker night with more numerous and faster enemies
-- Health, hunger, thirst, stamina, rifle combat, mobile aim assistance, and local autosave
+- More detailed enemy proportions, facial shading, clothing, posture, and uneven movement
+- Health, hunger, thirst, stamina, rifle combat, and local autosave
 - Balanced and high-quality modes plus automatic render-scale adjustment for stable mobile performance
 
 Runtime files are `safe-inside.html`, `safe-inside-v2.css`, and

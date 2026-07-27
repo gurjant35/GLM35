@@ -107,7 +107,7 @@ body.si2 {
 }
 
 .si-top-right {
-  right: calc(12px + env(safe-area-inset-right));
+  right: calc(150px + env(safe-area-inset-right));
   display: grid;
   justify-items: end;
   gap: 7px;
@@ -244,6 +244,64 @@ body.si2 {
   letter-spacing: 0.08em;
 }
 
+#si-minimap-wrap {
+  position: absolute;
+  top: calc(10px + env(safe-area-inset-top));
+  right: calc(12px + env(safe-area-inset-right));
+  width: 126px;
+  height: 126px;
+  overflow: hidden;
+  border-radius: 18px;
+  pointer-events: none;
+}
+
+#si-minimap {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+#si-minimap-label {
+  position: absolute;
+  right: 7px;
+  bottom: 5px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  background: rgba(3, 7, 9, 0.72);
+  color: rgba(232, 240, 235, 0.72);
+  font-family: var(--si-mono);
+  font-size: 6px;
+  letter-spacing: 0.08em;
+}
+
+#si-vehicle-hud {
+  position: absolute;
+  top: calc(143px + env(safe-area-inset-top));
+  right: calc(12px + env(safe-area-inset-right));
+  display: grid;
+  min-width: 126px;
+  padding: 6px 9px;
+  color: var(--si-muted);
+  font-family: var(--si-mono);
+  font-size: 7px;
+  letter-spacing: 0.08em;
+  text-align: right;
+  opacity: 0.58;
+  pointer-events: none;
+}
+
+#si-vehicle-hud.driving {
+  color: var(--si-green);
+  border-color: rgba(131, 211, 164, 0.42);
+  opacity: 1;
+}
+
+#si-vehicle-hud b {
+  margin-top: 2px;
+  color: var(--si-ink);
+  font-size: 12px;
+}
+
 #si-compass {
   position: absolute;
   top: calc(56px + env(safe-area-inset-top));
@@ -368,7 +426,7 @@ body.si2 {
   z-index: 7;
   top: 0;
   right: 0;
-  width: 58%;
+  width: 50%;
   height: 100%;
   display: none;
   touch-action: none;
@@ -376,28 +434,48 @@ body.si2 {
 
 #si-stick {
   position: fixed;
-  z-index: 9;
-  left: calc(24px + env(safe-area-inset-left));
-  bottom: calc(22px + env(safe-area-inset-bottom));
+  z-index: 8;
+  left: 0;
+  top: 0;
+  width: 50%;
+  height: 100%;
+  display: none;
+  overflow: hidden;
+  border: 0;
+  background: transparent;
+  touch-action: none;
+}
+
+#si-stick-base {
+  position: absolute;
+  left: calc(88px + env(safe-area-inset-left));
+  top: calc(100% - 88px - env(safe-area-inset-bottom));
   width: 128px;
   height: 128px;
-  display: none;
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.9);
   border: 1px solid rgba(236, 242, 238, 0.18);
   border-radius: 50%;
   background: radial-gradient(circle, rgba(28, 39, 42, 0.25), rgba(7, 12, 14, 0.36));
   box-shadow: inset 0 0 25px rgba(0, 0, 0, 0.3);
-  touch-action: none;
+  pointer-events: none;
+  transition: opacity 100ms ease, transform 100ms ease;
 }
 
-#si-stick::before,
-#si-stick::after {
+#si-stick.active #si-stick-base {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+}
+
+#si-stick-base::before,
+#si-stick-base::after {
   content: "";
   position: absolute;
   background: rgba(240, 245, 242, 0.07);
 }
 
-#si-stick::before { left: 50%; top: 12px; bottom: 12px; width: 1px; }
-#si-stick::after { top: 50%; left: 12px; right: 12px; height: 1px; }
+#si-stick-base::before { left: 50%; top: 12px; bottom: 12px; width: 1px; }
+#si-stick-base::after { top: 50%; left: 12px; right: 12px; height: 1px; }
 
 #si-knob {
   position: absolute;
@@ -467,6 +545,17 @@ body.si2 {
 #si-rv-button {
   border-color: rgba(131, 211, 164, 0.52);
   color: var(--si-green);
+}
+
+#si-drive-button {
+  border-color: rgba(240, 180, 95, 0.52);
+  color: var(--si-amber);
+}
+
+#si-camera-button {
+  border-color: rgba(116, 184, 221, 0.5);
+  color: var(--si-blue);
+  line-height: 1.25;
 }
 
 #si-action-ring {
@@ -813,10 +902,13 @@ body.si2 {
   .si-vital-row { min-height: 11px; }
   #si-compass { top: calc(42px + env(safe-area-inset-top)); }
   #si-toast-stack { top: calc(64px + env(safe-area-inset-top)); }
-  #si-stick { width: 112px; height: 112px; }
+  #si-stick-base { width: 112px; height: 112px; }
   #si-knob { left: 34px; top: 34px; width: 44px; height: 44px; }
   .si-touch-button { width: 48px; height: 48px; }
   #si-fire { width: 68px; height: 68px; }
+  #si-minimap-wrap { width: 112px; height: 112px; }
+  #si-vehicle-hud { top: calc(129px + env(safe-area-inset-top)); min-width: 112px; }
+  .si-top-right { right: calc(134px + env(safe-area-inset-right)); }
   .si-card { padding: 17px; }
   .si-card h1 { font-size: 39px; }
   .si-lead { margin: 9px 0 12px; font-size: 11px; }
@@ -838,6 +930,9 @@ body.si2 {
 @media (max-width: 620px) {
   .si-feature-grid { grid-template-columns: 1fr 1fr 1fr; }
   #si-pack-readout { display: none; }
+  #si-minimap-wrap { width: 104px; height: 104px; }
+  #si-vehicle-hud { top: calc(121px + env(safe-area-inset-top)); min-width: 104px; }
+  .si-top-right { right: calc(126px + env(safe-area-inset-right)); }
 }
 
 @media (prefers-reduced-motion: reduce) {
